@@ -31,7 +31,7 @@ describe("extract", () => {
     expect(fs.existsSync(pagesDir)).toBe(true);
 
     // Check first page
-    const page001 = path.join(pagesDir, "001");
+    const page001 = path.join(pagesDir, "pg001");
     expect(fs.existsSync(path.join(page001, "page.png"))).toBe(true);
     expect(fs.existsSync(path.join(page001, "text.txt"))).toBe(true);
 

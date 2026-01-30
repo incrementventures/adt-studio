@@ -41,11 +41,8 @@ export function extract(
 
       for (let i = 0; i < totalPages; i++) {
         const pageNum = i + 1;
-        const pageDir = path.join(
-          bookDir,
-          "pages",
-          String(pageNum).padStart(3, "0")
-        );
+        const pageId = "pg" + String(pageNum).padStart(3, "0");
+        const pageDir = path.join(bookDir, "pages", pageId);
         const imagesDir = path.join(pageDir, "images");
         fs.mkdirSync(imagesDir, { recursive: true });
 
@@ -89,7 +86,7 @@ export function extract(
                     fs.writeFileSync(
                       path.join(
                         imagesDir,
-                        String(imgIndex).padStart(3, "0") + ".png"
+                        pageId + "_im" + String(imgIndex).padStart(3, "0") + ".png"
                       ),
                       Buffer.from(imgPixmap.asPNG())
                     );

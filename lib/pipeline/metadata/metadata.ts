@@ -50,7 +50,7 @@ export function extractMetadata(
 
         const pageDirs = fs
           .readdirSync(pagesDir)
-          .filter((d) => /^\d+$/.test(d))
+          .filter((d) => /^pg\d{3}$/.test(d))
           .sort()
           .slice(0, MAX_PAGES);
 
@@ -62,7 +62,7 @@ export function extractMetadata(
             "utf-8"
           );
           return {
-            pageNumber: parseInt(dir, 10),
+            pageNumber: parseInt(dir.slice(2), 10),
             text,
             imageBase64: imageBuffer.toString("base64"),
           };
