@@ -11,7 +11,9 @@
     "extract": "tsx lib/cli/extract.ts",
     "metadata": "tsx lib/cli/metadata.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:integration": "vitest run metadata-integration",
+    "test:recache": "RECACHE=1 vitest run metadata-integration"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.33",

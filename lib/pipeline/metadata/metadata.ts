@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
-import { generateObject } from "ai";
 import type { LanguageModelV1 } from "ai";
+import { cachedGenerateObject } from "../cache.js";
 import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
@@ -76,7 +76,7 @@ export function extractMetadata(
           (m) => m.role !== "system"
         );
 
-        const { object: metadata } = await generateObject({
+        const { object: metadata } = await cachedGenerateObject({
           model: DEFAULT_MODELS[provider](),
           schema: bookMetadataSchema,
           system: typeof systemMessage?.content === "string"
@@ -86,7 +86,7 @@ export function extractMetadata(
             role: m.role as "user" | "assistant",
             content: m.content,
           })),
-        });
+        }, bookDir);
 
         fs.writeFileSync(
           path.join(bookDir, "metadata.json"),
