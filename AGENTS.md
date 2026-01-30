@@ -55,6 +55,29 @@ Extracts all content from a PDF into a structured directory.
 
 **CLI:** `pnpm run extract <pdf_path>`
 
+### Step 2: Metadata (`lib/pipeline/metadata.ts`)
+
+Sends the first pages of an extracted book to an LLM and writes structured metadata.
+
+**Input:** `books/<label>/pages/` (from Step 1)
+**Output:** `books/<label>/metadata.json` with:
+- `title` — book title (string | null)
+- `authors` — list of author names
+- `publisher` — publisher name (string | null)
+- `language_code` — ISO 639-1 code (string | null)
+- `cover_page_number` — page number of the front cover (int | null)
+- `table_of_contents` — list of `{ title, page_number }` entries (array | null)
+- `reasoning` — explanation of extraction decisions
+
+**CLI:** `pnpm run metadata <label>`
+
+## Reference Repo: adt-press
+
+The symlink `adt-press` in the project root points to a sibling Python project (Hamilton-based) that implements the same pipeline. Use it as inspiration when implementing our TypeScript version, but:
+
+- **Never create dependencies** on adt-press (no imports, no shared modules, no runtime references).
+- Prompts in `adt-press/prompts/` can be copied into this repo if needed.
+
 ## Conventions
 
 - Keep pipeline logic CLI-first. The UI is a convenience layer, not the source of truth.

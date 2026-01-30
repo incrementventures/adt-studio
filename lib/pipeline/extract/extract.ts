@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import mupdf from "mupdf";
 import { Observable } from "rxjs";
-import { slugFromPath } from "./slug.js";
+import { slugFromPath } from "../slug.js";
 
 export interface PageProgress {
   page: number;

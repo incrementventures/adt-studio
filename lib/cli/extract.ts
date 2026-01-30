@@ -1,4 +1,4 @@
-import { extract } from "../pipeline/extract.js";
+import { extract } from "../pipeline/extract/extract.js";
 import { runWithProgress } from "./progress.js";
 
 const pdfPath = process.argv[2];
