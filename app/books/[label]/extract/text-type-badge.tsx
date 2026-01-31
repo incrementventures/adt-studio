@@ -52,6 +52,10 @@ export function TextTypeBadge({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    setType(currentType);
+  }, [currentType]);
+
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {

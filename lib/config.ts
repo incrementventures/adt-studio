@@ -11,11 +11,24 @@ const configSchema = z.object({
   metadata: z
     .object({
       prompt: z.string().optional(),
+      model: z.string().optional(),
     })
     .optional(),
   text_extraction: z
     .object({
       prompt: z.string().optional(),
+      model: z.string().optional(),
+      concurrency: z.number().int().min(1).optional(),
+    })
+    .optional(),
+  start_page: z.number().int().min(1).optional(),
+  end_page: z.number().int().min(1).optional(),
+  section_types: z.record(z.string(), z.string()).optional(),
+  pruned_text_types: z.array(z.string()).optional(),
+  page_sectioning: z
+    .object({
+      prompt: z.string().optional(),
+      model: z.string().optional(),
       concurrency: z.number().int().min(1).optional(),
     })
     .optional(),
@@ -48,4 +61,16 @@ export const textTypeKeys = Object.keys(
 
 export const groupTypeKeys = Object.keys(
   config.text_group_types
+) as [string, ...string[]];
+
+export function getPrunedTextTypes(): string[] {
+  return config.pruned_text_types ?? [];
+}
+
+export function getSectionTypes(): Record<string, string> {
+  return config.section_types ?? {};
+}
+
+export const sectionTypeKeys = Object.keys(
+  config.section_types ?? {}
 ) as [string, ...string[]];

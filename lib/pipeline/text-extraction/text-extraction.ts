@@ -1,34 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
-import type { LanguageModel } from "ai";
-import { cachedPromptGenerateObject } from "../cache.js";
-import { openai } from "@ai-sdk/openai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
+import { cachedPromptGenerateObject } from "../cache";
 import {
   pageTextExtractionSchema,
   type PageTextExtraction,
-} from "./text-extraction-schema.js";
-import { getTextTypes, getTextGroupTypes, loadConfig } from "../../config.js";
+} from "./text-extraction-schema";
+import { getTextTypes, getTextGroupTypes, getPrunedTextTypes, loadConfig } from "../../config";
 import {
   defineNode,
   createContext,
   resolveNode,
+  resolveModel,
   type LLMProvider,
   type Node,
-} from "../node.js";
-import { pagesNode, type Page } from "../extract/extract.js";
-import { metadataNode } from "../metadata/metadata.js";
-import type { BookMetadata } from "../metadata/metadata-schema.js";
+} from "../node";
+import { pagesNode, type Page } from "../extract/extract";
+import { metadataNode } from "../metadata/metadata";
+import type { BookMetadata } from "../metadata/metadata-schema";
 
 const DEFAULT_CONCURRENCY = 5;
-
-const DEFAULT_MODELS: Record<LLMProvider, () => LanguageModel> = {
-  openai: () => openai("gpt-5.2"),
-  anthropic: () => anthropic("claude-sonnet-4-20250514"),
-  google: () => google("gemini-2.5-pro"),
-};
 
 export interface TextExtractionProgress {
   phase: "loading" | "extracting";
@@ -105,7 +96,7 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
 
               const extraction =
                 await cachedPromptGenerateObject<PageTextExtraction>({
-                  model: DEFAULT_MODELS[ctx.provider](),
+                  model: resolveModel(ctx, ctx.config.text_extraction?.model),
                   schema: pageTextExtractionSchema,
                   promptName,
                   promptContext: {
@@ -116,6 +107,25 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
                   },
                   cacheDir: textExtractionDir,
                 });
+
+              // Assign stable group IDs: pg###_gp###
+              extraction.groups.forEach((g, idx) => {
+                g.group_id =
+                  p.pageId + "_gp" + String(idx + 1).padStart(3, "0");
+              });
+
+              // Mark pruned text entries based on config
+              const prunedTypes = getPrunedTextTypes();
+              if (prunedTypes.length > 0) {
+                const prunedSet = new Set(prunedTypes);
+                for (const g of extraction.groups) {
+                  for (const t of g.texts) {
+                    if (prunedSet.has(t.text_type)) {
+                      t.is_pruned = true;
+                    }
+                  }
+                }
+              }
 
               fs.writeFileSync(
                 path.join(textExtractionDir, `${p.pageId}.json`),

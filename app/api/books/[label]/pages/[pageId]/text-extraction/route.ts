@@ -91,7 +91,34 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { groupIndex, textIndex, textType, text, groupType, baseVersion } = body;
+
+  const latest = getLatestTextExtractionPath(label, pageId);
+  if (!latest) {
+    return NextResponse.json(
+      { error: "No text extraction found" },
+      { status: 404 }
+    );
+  }
+
+  // Full-data save: client sends the complete edited extraction
+  if (body.data && typeof body.data === "object") {
+    const data: PageTextExtraction = body.data;
+
+    const nextVersion = latest.version + 1;
+    const paths = resolveBookPaths(label, getBooksRoot());
+    const newFile = path.join(
+      paths.textExtractionDir,
+      `${pageId}.v${String(nextVersion).padStart(3, "0")}.json`
+    );
+
+    fs.writeFileSync(newFile, JSON.stringify(data, null, 2), "utf-8");
+    setCurrentTextExtractionVersion(label, pageId, nextVersion);
+
+    return NextResponse.json({ version: nextVersion, ...data });
+  }
+
+  // Legacy single-field mutation path
+  const { groupIndex, textIndex, textType, text, groupType, isPruned, baseVersion } = body;
 
   if (typeof groupIndex !== "number") {
     return NextResponse.json(
@@ -100,20 +127,19 @@ export async function PATCH(
     );
   }
 
-  // Must provide exactly one mutation
   const hasTextType = typeof textType === "string";
   const hasText = typeof text === "string";
   const hasGroupType = typeof groupType === "string";
+  const hasIsPruned = typeof isPruned === "boolean";
 
-  if (!hasTextType && !hasText && !hasGroupType) {
+  if (!hasTextType && !hasText && !hasGroupType && !hasIsPruned) {
     return NextResponse.json(
-      { error: "Must provide textType, text, or groupType" },
+      { error: "Must provide textType, text, groupType, or isPruned" },
       { status: 400 }
     );
   }
 
-  // textType and text require textIndex
-  if ((hasTextType || hasText) && typeof textIndex !== "number") {
+  if ((hasTextType || hasText || hasIsPruned) && typeof textIndex !== "number") {
     return NextResponse.json(
       { error: "textIndex required for textType/text edits" },
       { status: 400 }
@@ -134,15 +160,6 @@ export async function PATCH(
     );
   }
 
-  const latest = getLatestTextExtractionPath(label, pageId);
-  if (!latest) {
-    return NextResponse.json(
-      { error: "No text extraction found" },
-      { status: 404 }
-    );
-  }
-
-  // Load data from the version being edited (baseVersion), not necessarily latest
   const sourceVersion =
     typeof baseVersion === "number" ? baseVersion : latest.version;
   const sourceData = getTextExtractionVersion(label, pageId, sourceVersion);
@@ -167,7 +184,7 @@ export async function PATCH(
     group.group_type = groupType;
   }
 
-  if (hasTextType || hasText) {
+  if (hasTextType || hasText || hasIsPruned) {
     if (textIndex < 0 || textIndex >= group.texts.length) {
       return NextResponse.json(
         { error: "textIndex out of bounds" },
@@ -179,6 +196,9 @@ export async function PATCH(
     }
     if (hasText) {
       group.texts[textIndex].text = text;
+    }
+    if (hasIsPruned) {
+      group.texts[textIndex].is_pruned = isPruned;
     }
   }
 

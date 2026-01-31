@@ -2,13 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveBookPaths } from "./pipeline/types";
 import { bookMetadataSchema, type BookMetadata } from "./pipeline/metadata/metadata-schema";
+import type { PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 
 interface TextEntry {
   text_type: string;
   text: string;
+  is_pruned?: boolean;
 }
 
 interface TextGroup {
+  group_id?: string;
   group_type: string;
   texts: TextEntry[];
 }
@@ -211,6 +214,18 @@ export function resolveCoverImagePath(label: string): string | null {
   const pageId = "pg" + String(metadata.cover_page_number).padStart(3, "0");
   return resolvePageImagePath(label, pageId);
 }
+
+export function getPageSectioning(
+  label: string,
+  pageId: string
+): PageSectioning | null {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const filePath = path.join(paths.pageSectioningDir, `${pageId}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageSectioning;
+}
+
+export { type PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 
 function countPages(pagesDir: string): number {
   if (!fs.existsSync(pagesDir)) return 0;
