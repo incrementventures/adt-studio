@@ -16,6 +16,7 @@ const configSchema = z.object({
   text_extraction: z
     .object({
       prompt: z.string().optional(),
+      concurrency: z.number().int().min(1).optional(),
     })
     .optional(),
 });

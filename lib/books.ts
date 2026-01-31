@@ -19,7 +19,7 @@ export interface PageTextExtraction {
 }
 
 export function getBooksRoot(): string {
-  return path.resolve(process.env.BOOKS_ROOT ?? "fixtures");
+  return path.resolve(process.env.BOOKS_ROOT ?? "books");
 }
 
 export interface BookSummary {
