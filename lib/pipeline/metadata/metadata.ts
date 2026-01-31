@@ -1,18 +1,24 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
-import type { LanguageModel, ModelMessage } from "ai";
-import { cachedGenerateObject } from "../cache.js";
+import type { LanguageModel } from "ai";
+import { cachedPromptGenerateObject } from "../cache.js";
 import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
-import { bookMetadataSchema } from "./metadata-schema.js";
-import { renderPrompt } from "../prompt.js";
-import { defineStep } from "../step.js";
-import { extractStep } from "../extract/extract.js";
-import type { LLMProvider, PipelineOptions } from "../types.js";
+import { bookMetadataSchema, type BookMetadata } from "./metadata-schema.js";
+import {
+  defineNode,
+  createContext,
+  resolveNode,
+  type PipelineContext,
+  type LLMProvider,
+  type Node,
+} from "../node.js";
+import { pagesNode, type Page } from "../extract/extract.js";
+import { loadConfig } from "../../config.js";
 
-export type { LLMProvider } from "../types.js";
+export type { LLMProvider } from "../node.js";
 
 const MAX_PAGES = 15;
 
@@ -27,79 +33,59 @@ export interface MetadataProgress {
   label: string;
 }
 
-export const metadataStep = defineStep<MetadataProgress>({
+export const metadataNode: Node<BookMetadata> = defineNode<
+  BookMetadata | MetadataProgress
+>({
   name: "metadata",
-  deps: [extractStep],
-  isComplete: (paths) => fs.existsSync(paths.metadataFile),
-  execute: (paths, options) => {
-    const provider = options.provider ?? "openai";
-
-    return new Observable<MetadataProgress>((subscriber) => {
+  isComplete: (ctx) => {
+    const metadataFile = path.resolve(
+      ctx.outputRoot,
+      ctx.label,
+      "metadata",
+      "metadata.json"
+    );
+    if (!fs.existsSync(metadataFile)) return null;
+    return JSON.parse(fs.readFileSync(metadataFile, "utf-8"));
+  },
+  resolve: (ctx) => {
+    return new Observable<BookMetadata | MetadataProgress>((subscriber) => {
       (async () => {
         try {
-          const label = path.basename(paths.bookDir);
-          subscriber.next({ phase: "loading", label });
+          subscriber.next({ phase: "loading", label: ctx.label });
 
-          if (!fs.existsSync(paths.pagesDir)) {
-            throw new Error(
-              `Pages directory not found: ${paths.pagesDir}. Run extract first.`
-            );
-          }
+          const allPages = await resolveNode(pagesNode, ctx);
 
-          const pageDirs = fs
-            .readdirSync(paths.pagesDir)
-            .filter((d) => /^pg\d{3}$/.test(d))
-            .sort()
-            .slice(0, MAX_PAGES);
+          const pages = allPages.slice(0, MAX_PAGES).map((p) => ({
+            pageNumber: p.pageNumber,
+            text: p.text,
+            imageBase64: fs.readFileSync(p.imagePath).toString("base64"),
+          }));
 
-          const pages = pageDirs.map((dir) => {
-            const pageDir = path.join(paths.pagesDir, dir);
-            const imageBuffer = fs.readFileSync(
-              path.join(pageDir, "page.png")
-            );
-            const text = fs.readFileSync(
-              path.join(pageDir, "text.txt"),
-              "utf-8"
-            );
-            return {
-              pageNumber: parseInt(dir.slice(2), 10),
-              text,
-              imageBase64: imageBuffer.toString("base64"),
-            };
+          subscriber.next({ phase: "calling-llm", label: ctx.label });
+
+          const metadataDir = path.resolve(
+            ctx.outputRoot,
+            ctx.label,
+            "metadata"
+          );
+          const metadataFile = path.join(metadataDir, "metadata.json");
+
+          const metadata = await cachedPromptGenerateObject<BookMetadata>({
+            model: DEFAULT_MODELS[ctx.provider](),
+            schema: bookMetadataSchema,
+            promptName: "metadata_extraction",
+            promptContext: { pages },
+            cacheDir: metadataDir,
           });
 
-          subscriber.next({ phase: "calling-llm", label });
-
-          const promptMessages = await renderPrompt("metadata_extraction", {
-            pages,
-          });
-          const systemMessage = promptMessages.find(
-            (m) => m.role === "system"
-          );
-          const nonSystemMessages = promptMessages.filter(
-            (m) => m.role !== "system"
-          );
-
-          const { object: metadata } = await cachedGenerateObject(
-            {
-              model: DEFAULT_MODELS[provider](),
-              schema: bookMetadataSchema,
-              system:
-                typeof systemMessage?.content === "string"
-                  ? systemMessage.content
-                  : undefined,
-              messages: nonSystemMessages as ModelMessage[],
-            },
-            paths.metadataDir
-          );
-
-          fs.mkdirSync(paths.metadataDir, { recursive: true });
+          fs.mkdirSync(metadataDir, { recursive: true });
           fs.writeFileSync(
-            paths.metadataFile,
+            metadataFile,
             JSON.stringify(metadata, null, 2) + "\n"
           );
 
-          subscriber.next({ phase: "done", label });
+          subscriber.next({ phase: "done", label: ctx.label });
+          subscriber.next(metadata);
           subscriber.complete();
         } catch (err) {
           subscriber.error(err);
@@ -107,11 +93,28 @@ export const metadataStep = defineStep<MetadataProgress>({
       })();
     });
   },
-});
+}) as Node<BookMetadata>;
 
 export function extractMetadata(
   label: string,
-  options?: PipelineOptions
+  options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<MetadataProgress> {
-  return metadataStep.run(label, options);
+  const config = loadConfig();
+  const ctx = createContext(label, {
+    config,
+    outputRoot: options?.outputRoot,
+    provider: options?.provider ?? (config.provider as LLMProvider | undefined),
+  });
+
+  return new Observable<MetadataProgress>((subscriber) => {
+    metadataNode.resolve(ctx).subscribe({
+      next(v) {
+        if (v && typeof v === "object" && "phase" in v && "label" in v) {
+          subscriber.next(v as unknown as MetadataProgress);
+        }
+      },
+      error: (err) => subscriber.error(err),
+      complete: () => subscriber.complete(),
+    });
+  });
 }

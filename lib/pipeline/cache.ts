@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { generateObject } from "ai";
-import type { GenerateObjectResult } from "ai";
+import type { GenerateObjectResult, LanguageModel, ModelMessage } from "ai";
+import { renderPrompt } from "./prompt.js";
 
 type GenerateObjectParams = Parameters<typeof generateObject>[0];
 
@@ -25,6 +26,36 @@ export async function cachedGenerateObject<T>(
   fs.writeFileSync(cacheFile, JSON.stringify(result.object, null, 2) + "\n");
 
   return result as GenerateObjectResult<T>;
+}
+
+export async function cachedPromptGenerateObject<T>(options: {
+  model: LanguageModel;
+  schema: unknown;
+  promptName: string;
+  promptContext: Record<string, unknown>;
+  cacheDir: string;
+}): Promise<T> {
+  const promptMessages = await renderPrompt(
+    options.promptName,
+    options.promptContext
+  );
+  const systemMessage = promptMessages.find((m) => m.role === "system");
+  const nonSystemMessages = promptMessages.filter((m) => m.role !== "system");
+
+  const { object } = await cachedGenerateObject<T>(
+    {
+      model: options.model,
+      schema: options.schema,
+      system:
+        typeof systemMessage?.content === "string"
+          ? systemMessage.content
+          : undefined,
+      messages: nonSystemMessages as ModelMessage[],
+    } as GenerateObjectParams,
+    options.cacheDir
+  );
+
+  return object;
 }
 
 function computeHash(options: GenerateObjectParams): string {

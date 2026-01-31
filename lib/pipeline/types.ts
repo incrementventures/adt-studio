@@ -29,9 +29,4 @@ export function resolveBookPaths(
   };
 }
 
-export type LLMProvider = "openai" | "anthropic" | "google";
-
-export interface PipelineOptions {
-  outputRoot?: string;
-  provider?: LLMProvider;
-}
+export type { LLMProvider } from "./node.js";

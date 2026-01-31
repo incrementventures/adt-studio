@@ -6,13 +6,31 @@ import { z } from "zod/v4";
 const configSchema = z.object({
   text_types: z.record(z.string(), z.string()),
   text_group_types: z.record(z.string(), z.string()),
+  pdf_path: z.string().optional(),
+  provider: z.enum(["openai", "anthropic", "google"]).optional(),
+  metadata: z
+    .object({
+      prompt: z.string().optional(),
+    })
+    .optional(),
+  text_extraction: z
+    .object({
+      prompt: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
 
-const configPath = path.resolve(process.cwd(), "config.yaml");
+export function loadConfig(configPath?: string): AppConfig {
+  const resolved = configPath ?? path.resolve(process.cwd(), "config.yaml");
+  const raw = yaml.load(fs.readFileSync(resolved, "utf-8"));
+  return configSchema.parse(raw);
+}
 
-const raw = yaml.load(fs.readFileSync(configPath, "utf-8"));
+// Module-level config for backwards compatibility (used by schema files, books.ts, web app)
+const defaultConfigPath = path.resolve(process.cwd(), "config.yaml");
+const raw = yaml.load(fs.readFileSync(defaultConfigPath, "utf-8"));
 export const config: AppConfig = configSchema.parse(raw);
 
 export function getTextTypes(): Record<string, string> {

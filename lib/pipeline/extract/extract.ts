@@ -1,11 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import mupdf, { type Document as MupdfDocument } from "mupdf";
-import { Observable, throwError } from "rxjs";
+import { Observable } from "rxjs";
 import { slugFromPath } from "../slug.js";
-import type { Step } from "../step.js";
-import type { BookPaths } from "../types.js";
-import { resolveBookPaths } from "../types.js";
+import { defineNode, type PipelineContext, type Node } from "../node.js";
+
+export interface Page {
+  pageId: string;
+  pageNumber: number;
+  text: string;
+  imagePath: string;
+}
 
 export interface PageProgress {
   page: number;
@@ -13,12 +18,145 @@ export interface PageProgress {
   label: string;
 }
 
-export interface ExtractResult {
-  label: string;
-  outputDir: string;
-  totalPages: number;
+function readPagesFromDisk(pagesDir: string): Page[] {
+  return fs
+    .readdirSync(pagesDir)
+    .filter((d) => /^pg\d{3}$/.test(d))
+    .sort()
+    .map((pageId) => {
+      const pageDir = path.join(pagesDir, pageId);
+      const text = fs.readFileSync(path.join(pageDir, "text.txt"), "utf-8");
+      return {
+        pageId,
+        pageNumber: parseInt(pageId.slice(2), 10),
+        text,
+        imagePath: path.join(pageDir, "page.png"),
+      };
+    });
 }
 
+export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
+  name: "pages",
+  isComplete: (ctx) => {
+    const pagesDir = path.resolve(ctx.outputRoot, ctx.label, "extract", "pages");
+    if (!fs.existsSync(path.join(pagesDir, "pg001", "page.png"))) return null;
+    return readPagesFromDisk(pagesDir);
+  },
+  resolve: (ctx) => {
+    const pdfPath = ctx.config.pdf_path;
+    if (!pdfPath) {
+      throw new Error("pdf_path required in config (or pass via CLI)");
+    }
+    return extractPdf(pdfPath, ctx);
+  },
+}) as Node<Page[]>;
+
+function extractPdf(
+  pdfPath: string,
+  ctx: PipelineContext
+): Observable<Page[] | PageProgress> {
+  const bookDir = path.resolve(ctx.outputRoot, ctx.label, "extract");
+
+  return new Observable<Page[] | PageProgress>((subscriber) => {
+    try {
+      // Suppress mupdf native warnings (e.g. "garbage bytes before version marker")
+      const origWrite = process.stderr.write;
+      process.stderr.write = () => true;
+      let doc: MupdfDocument;
+      try {
+        doc = mupdf.Document.openDocument(
+          fs.readFileSync(pdfPath),
+          "application/pdf"
+        );
+      } finally {
+        process.stderr.write = origWrite;
+      }
+      const totalPages = doc.countPages();
+      const pages: Page[] = [];
+
+      for (let i = 0; i < totalPages; i++) {
+        const pageNum = i + 1;
+        const pageId = "pg" + String(pageNum).padStart(3, "0");
+        const pageDir = path.join(bookDir, "pages", pageId);
+        const imagesDir = path.join(pageDir, "images");
+        fs.mkdirSync(imagesDir, { recursive: true });
+
+        const page = doc.loadPage(i);
+
+        // Render full-page image at 2x scale (~144 DPI)
+        const matrix = mupdf.Matrix.scale(2, 2);
+        const pixmap = page.toPixmap(
+          matrix,
+          mupdf.ColorSpace.DeviceRGB,
+          false
+        );
+        const imagePath = path.join(pageDir, "page.png");
+        fs.writeFileSync(imagePath, Buffer.from(pixmap.asPNG()));
+
+        // Extract text
+        const stext = page.toStructuredText();
+        const text = stext.asText();
+        fs.writeFileSync(path.join(pageDir, "text.txt"), text);
+
+        // Extract embedded raster images from page resources
+        const pdfDoc = doc.asPDF();
+        let imgIndex = 0;
+        if (pdfDoc) {
+          const pageObj = (page as any).getObject();
+          const resources = pageObj.getInheritable("Resources");
+          if (!resources.isNull()) {
+            const xobjects = resources.get("XObject");
+            if (!xobjects.isNull()) {
+              xobjects.forEach((xobj: any) => {
+                const resolved = xobj.isIndirect() ? xobj.resolve() : xobj;
+                const subtype = resolved.get("Subtype");
+                if (!subtype.isNull() && subtype.asName() === "Image") {
+                  try {
+                    const image = pdfDoc.loadImage(xobj);
+                    const imgPixmap = image.toPixmap();
+                    imgIndex++;
+                    fs.writeFileSync(
+                      path.join(
+                        imagesDir,
+                        pageId +
+                          "_im" +
+                          String(imgIndex).padStart(3, "0") +
+                          ".png"
+                      ),
+                      Buffer.from(imgPixmap.asPNG())
+                    );
+                  } catch {
+                    // Skip images that fail to decode
+                  }
+                }
+              });
+            }
+          }
+        }
+
+        // Remove empty images directory
+        if (imgIndex === 0) {
+          fs.rmdirSync(imagesDir);
+        }
+
+        pages.push({ pageId, pageNumber: pageNum, text, imagePath });
+        subscriber.next({
+          page: pageNum,
+          totalPages,
+          label: ctx.label,
+        });
+      }
+
+      // Final emission is the result value
+      subscriber.next(pages);
+      subscriber.complete();
+    } catch (err) {
+      subscriber.error(err);
+    }
+  });
+}
+
+// Convenience wrapper for CLI usage (creates context internally)
 export function extract(
   pdfPath: string,
   outputRoot = "books"
@@ -78,7 +216,6 @@ export function extract(
             const xobjects = resources.get("XObject");
             if (!xobjects.isNull()) {
               xobjects.forEach((xobj: any) => {
-                // Resolve to check Subtype, but keep original ref for loadImage
                 const resolved = xobj.isIndirect() ? xobj.resolve() : xobj;
                 const subtype = resolved.get("Subtype");
                 if (!subtype.isNull() && subtype.asName() === "Image") {
@@ -89,7 +226,10 @@ export function extract(
                     fs.writeFileSync(
                       path.join(
                         imagesDir,
-                        pageId + "_im" + String(imgIndex).padStart(3, "0") + ".png"
+                        pageId +
+                          "_im" +
+                          String(imgIndex).padStart(3, "0") +
+                          ".png"
                       ),
                       Buffer.from(imgPixmap.asPNG())
                     );
@@ -116,15 +256,3 @@ export function extract(
     }
   });
 }
-
-export const extractStep: Step<PageProgress> = {
-  name: "extract",
-  isComplete(paths: BookPaths): boolean {
-    return fs.existsSync(path.join(paths.pagesDir, "pg001", "page.png"));
-  },
-  run(): Observable<PageProgress> {
-    return throwError(
-      () => new Error("Extract requires a PDF path. Run: pnpm extract <pdf_path>")
-    );
-  },
-};
