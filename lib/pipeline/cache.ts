@@ -28,11 +28,12 @@ export async function cachedGenerateObject<T>(
 }
 
 function computeHash(options: GenerateObjectParams): string {
+  const model = options.model;
   const keyData = {
-    modelId: options.model.modelId,
+    modelId: typeof model === "string" ? model : model.modelId,
     system: options.system,
     messages: options.messages,
-    schema: options.schema,
+    schema: "schema" in options ? options.schema : undefined,
   };
 
   const json = JSON.stringify(keyData);

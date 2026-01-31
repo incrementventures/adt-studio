@@ -27,7 +27,7 @@ describe("extract", () => {
     expect(progress[0].label).toBe("raven");
     expect(progress[0].page).toBe(1);
 
-    const pagesDir = path.join(tmpDir, "raven", "pages");
+    const pagesDir = path.join(tmpDir, "raven", "extract", "pages");
     expect(fs.existsSync(pagesDir)).toBe(true);
 
     // Check first page

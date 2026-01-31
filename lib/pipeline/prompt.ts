@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Liquid, Tag, type TagToken, type TopLevelToken } from "liquidjs";
+import { Liquid, Tag, type TagToken, type TopLevelToken, type Template } from "liquidjs";
 import type { Context } from "liquidjs";
 import type { Emitter } from "liquidjs";
 import type { UserContent } from "ai";
@@ -31,8 +31,8 @@ class ChatTag extends Tag {
     const stream = liquid.parser
       .parseStream(remainTokens)
       .on("tag:endchat", () => stream.stop())
-      .on("template", (tpl: TopLevelToken) =>
-        (this.templates as TopLevelToken[]).push(tpl)
+      .on("template", (tpl: Template) =>
+        this.templates.push(tpl)
       )
       .on("end", () => {
         throw new Error("{% chat %} missing {% endchat %}");
@@ -43,14 +43,14 @@ class ChatTag extends Tag {
   *render(ctx: Context, emitter: Emitter): Generator<unknown, void, unknown> {
     emitter.write(`\x01CHAT:${this.role}\x01`);
     yield this.liquid.renderer.renderTemplates(
-      this.templates as TopLevelToken[],
+      this.templates,
       ctx,
       emitter
     );
     emitter.write(`\x01ENDCHAT\x01`);
   }
 
-  private templates: TopLevelToken[];
+  private templates: Template[];
 }
 
 /**
@@ -135,7 +135,7 @@ function parseContentParts(body: string): UserContent {
     parts.push({
       type: "image",
       image: match[1],
-      mimeType: "image/png",
+      mediaType: "image/png",
     });
     lastIndex = match.index + match[0].length;
   }

@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import mupdf from "mupdf";
-import { Observable } from "rxjs";
+import mupdf, { type Document as MupdfDocument } from "mupdf";
+import { Observable, throwError } from "rxjs";
 import { slugFromPath } from "../slug.js";
+import type { Step } from "../step.js";
+import type { BookPaths } from "../types.js";
+import { resolveBookPaths } from "../types.js";
 
 export interface PageProgress {
   page: number;
@@ -21,14 +24,14 @@ export function extract(
   outputRoot = "books"
 ): Observable<PageProgress> {
   const label = slugFromPath(pdfPath);
-  const bookDir = path.resolve(outputRoot, label);
+  const bookDir = path.resolve(outputRoot, label, "extract");
 
   return new Observable<PageProgress>((subscriber) => {
     try {
       // Suppress mupdf native warnings (e.g. "garbage bytes before version marker")
       const origWrite = process.stderr.write;
       process.stderr.write = () => true;
-      let doc: mupdf.Document;
+      let doc: MupdfDocument;
       try {
         doc = mupdf.Document.openDocument(
           fs.readFileSync(pdfPath),
@@ -113,3 +116,15 @@ export function extract(
     }
   });
 }
+
+export const extractStep: Step<PageProgress> = {
+  name: "extract",
+  isComplete(paths: BookPaths): boolean {
+    return fs.existsSync(path.join(paths.pagesDir, "pg001", "page.png"));
+  },
+  run(): Observable<PageProgress> {
+    return throwError(
+      () => new Error("Extract requires a PDF path. Run: pnpm extract <pdf_path>")
+    );
+  },
+};

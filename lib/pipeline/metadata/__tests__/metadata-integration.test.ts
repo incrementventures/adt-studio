@@ -5,8 +5,8 @@ import { lastValueFrom, toArray } from "rxjs";
 import { extractMetadata } from "../metadata.js";
 import { bookMetadataSchema } from "../metadata-schema.js";
 
-const booksRoot = path.resolve("books");
-const ravenPagesDir = path.join(booksRoot, "raven", "pages");
+const booksRoot = path.resolve("fixtures");
+const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");
 const hasPagesOnDisk = fs.existsSync(ravenPagesDir);
 
 if (!hasPagesOnDisk) {
@@ -20,15 +20,22 @@ describe("metadata integration", () => {
     "extracts metadata for raven and validates against schema",
     { timeout: 120_000 },
     async () => {
+      const metadataPath = path.join(booksRoot, "raven", "metadata", "metadata.json");
+      const alreadyComplete = fs.existsSync(metadataPath);
+
       const progress$ = extractMetadata("raven", { outputRoot: booksRoot });
       const events = await lastValueFrom(progress$.pipe(toArray()));
 
-      const phases = events.map((e) => e.phase);
-      expect(phases).toContain("loading");
-      expect(phases).toContain("calling-llm");
-      expect(phases).toContain("done");
+      if (alreadyComplete) {
+        // Step skips when output exists — no events emitted
+        expect(events).toEqual([]);
+      } else {
+        const phases = events.map((e) => e.phase);
+        expect(phases).toContain("loading");
+        expect(phases).toContain("calling-llm");
+        expect(phases).toContain("done");
+      }
 
-      const metadataPath = path.join(booksRoot, "raven", "metadata.json");
       const raw = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
       const metadata = bookMetadataSchema.parse(raw);
 
@@ -41,7 +48,7 @@ describe("metadata integration", () => {
   it.skipIf(!hasPagesOnDisk)(
     "cached result matches schema",
     async () => {
-      const cacheDir = path.join(booksRoot, "raven", ".cache");
+      const cacheDir = path.join(booksRoot, "raven", "metadata", ".cache");
       if (!fs.existsSync(cacheDir)) {
         console.warn("No cache directory found — skipping cache validation");
         return;

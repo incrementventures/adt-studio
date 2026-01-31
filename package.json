@@ -10,10 +10,11 @@
     "lint": "eslint",
     "extract": "tsx lib/cli/extract.ts",
     "metadata": "tsx lib/cli/metadata.ts",
+    "text-extraction": "tsx lib/cli/text-extraction.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run metadata-integration",
-    "test:recache": "RECACHE=1 vitest run metadata-integration",
+    "test:integration": "vitest run metadata-integration text-extraction-integration",
+    "test:recache": "RECACHE=1 vitest run metadata-integration text-extraction-integration",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "@ai-sdk/google": "^3.0.18",
     "@ai-sdk/openai": "^3.0.23",
     "ai": "^6.0.63",
+    "js-yaml": "^4.1.1",
     "liquidjs": "^10.24.0",
     "mupdf": "^1.27.0",
     "next": "16.1.6",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
