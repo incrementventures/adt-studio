@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import mupdf, { type Document as MupdfDocument } from "mupdf";
 import { Observable } from "rxjs";
-import { slugFromPath } from "../slug.js";
-import { defineNode, type PipelineContext, type Node } from "../node.js";
+import { slugFromPath } from "../slug";
+import { defineNode, type PipelineContext, type Node } from "../node";
 
 export interface Page {
   pageId: string;
@@ -70,40 +70,50 @@ function extractPage(doc: MupdfDocument, i: number, bookDir: string): Page {
   const text = stext.asText();
   fs.writeFileSync(path.join(pageDir, "text.txt"), text);
 
-  // Extract embedded raster images from page resources
+  // Extract embedded raster images from page resources (including Form XObjects)
   const pdfDoc = doc.asPDF();
   let imgIndex = 0;
   if (pdfDoc) {
     const pageObj = (page as any).getObject();
     const resources = pageObj.getInheritable("Resources");
-    if (!resources.isNull()) {
-      const xobjects = resources.get("XObject");
-      if (!xobjects.isNull()) {
-        xobjects.forEach((xobj: any) => {
-          const resolved = xobj.isIndirect() ? xobj.resolve() : xobj;
-          const subtype = resolved.get("Subtype");
-          if (!subtype.isNull() && subtype.asName() === "Image") {
-            try {
-              const image = pdfDoc.loadImage(xobj);
-              const imgPixmap = image.toPixmap();
-              imgIndex++;
-              fs.writeFileSync(
-                path.join(
-                  imagesDir,
-                  pageId +
-                    "_im" +
-                    String(imgIndex).padStart(3, "0") +
-                    ".png"
-                ),
-                Buffer.from(imgPixmap.asPNG())
-              );
-            } catch {
-              // Skip images that fail to decode
-            }
+
+    function extractImagesFromResources(res: any): void {
+      if (res.isNull()) return;
+      const xobjects = res.get("XObject");
+      if (xobjects.isNull()) return;
+      xobjects.forEach((xobj: any) => {
+        const resolved = xobj.isIndirect() ? xobj.resolve() : xobj;
+        const subtype = resolved.get("Subtype");
+        if (subtype.isNull()) return;
+        const name = subtype.asName();
+        if (name === "Image") {
+          try {
+            const image = pdfDoc!.loadImage(xobj);
+            const imgPixmap = image.toPixmap();
+            imgIndex++;
+            fs.writeFileSync(
+              path.join(
+                imagesDir,
+                pageId +
+                  "_im" +
+                  String(imgIndex).padStart(3, "0") +
+                  ".png"
+              ),
+              Buffer.from(imgPixmap.asPNG())
+            );
+          } catch {
+            // Skip images that fail to decode
           }
-        });
-      }
+        } else if (name === "Form") {
+          const formResources = resolved.get("Resources");
+          if (!formResources.isNull()) {
+            extractImagesFromResources(formResources);
+          }
+        }
+      });
     }
+
+    extractImagesFromResources(resources);
   }
 
   // Remove empty images directory
@@ -118,8 +128,12 @@ export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
   name: "pages",
   isComplete: (ctx) => {
     const pagesDir = path.resolve(ctx.outputRoot, ctx.label, "extract", "pages");
-    if (!fs.existsSync(path.join(pagesDir, "pg001", "page.png"))) return null;
-    return readPagesFromDisk(pagesDir);
+    const startPage = ctx.config.start_page ?? 1;
+    const firstPageId = "pg" + String(startPage).padStart(3, "0");
+    if (!fs.existsSync(path.join(pagesDir, firstPageId, "page.png"))) return null;
+    const allPages = readPagesFromDisk(pagesDir);
+    const endPage = ctx.config.end_page ?? Infinity;
+    return allPages.filter((p) => p.pageNumber >= startPage && p.pageNumber <= endPage);
   },
   resolve: (ctx) => {
     const pdfPath = ctx.config.pdf_path;
@@ -133,12 +147,15 @@ export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
         try {
           const doc = openPdf(pdfPath);
           const totalPages = doc.countPages();
+          const start = (ctx.config.start_page ?? 1) - 1;
+          const end = Math.min(ctx.config.end_page ?? totalPages, totalPages);
+          const rangeSize = end - start;
           const pages: Page[] = [];
 
-          for (let i = 0; i < totalPages; i++) {
+          for (let i = start; i < end; i++) {
             const page = extractPage(doc, i, bookDir);
             pages.push(page);
-            subscriber.next({ page: i + 1, totalPages, label: ctx.label });
+            subscriber.next({ page: i - start + 1, totalPages: rangeSize, label: ctx.label });
             await tick();
           }
 
@@ -155,7 +172,8 @@ export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
 // Convenience wrapper for CLI usage
 export function extract(
   pdfPath: string,
-  outputRoot = "books"
+  outputRoot = "books",
+  options?: { startPage?: number; endPage?: number }
 ): Observable<PageProgress> {
   const label = slugFromPath(pdfPath);
   const bookDir = path.resolve(outputRoot, label, "extract");
@@ -165,10 +183,13 @@ export function extract(
       try {
         const doc = openPdf(pdfPath);
         const totalPages = doc.countPages();
+        const start = (options?.startPage ?? 1) - 1;
+        const end = Math.min(options?.endPage ?? totalPages, totalPages);
+        const rangeSize = end - start;
 
-        for (let i = 0; i < totalPages; i++) {
+        for (let i = start; i < end; i++) {
           extractPage(doc, i, bookDir);
-          subscriber.next({ page: i + 1, totalPages, label });
+          subscriber.next({ page: i - start + 1, totalPages: rangeSize, label });
           await tick();
         }
 

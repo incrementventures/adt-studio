@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import path from "node:path";
-import { resolveBookPaths } from "../types.js";
+import { resolveBookPaths } from "../types";
 
 describe("resolveBookPaths", () => {
   it("returns correct structure for a label", () => {

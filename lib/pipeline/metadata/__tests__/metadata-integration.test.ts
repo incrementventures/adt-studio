@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { lastValueFrom, toArray } from "rxjs";
-import { extractMetadata } from "../metadata.js";
-import { bookMetadataSchema } from "../metadata-schema.js";
+import { extractMetadata } from "../metadata";
+import { bookMetadataSchema } from "../metadata-schema";
 
 const booksRoot = path.resolve("fixtures");
 const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");

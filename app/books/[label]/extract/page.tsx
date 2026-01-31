@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
-  getBookMetadata,
   listPages,
   getTextExtraction,
   listTextExtractionVersions,
@@ -16,29 +14,10 @@ export default async function ExtractPage({
   params: Promise<{ label: string }>;
 }) {
   const { label } = await params;
-  const metadata = getBookMetadata(label);
-  if (!metadata) notFound();
-
   const pages = listPages(label);
 
   return (
     <div>
-      <nav className="mb-4 text-sm text-muted">
-        <Link href="/" className="hover:text-foreground">
-          Books
-        </Link>
-        <span className="mx-2">/</span>
-        <Link href={`/books/${label}`} className="hover:text-foreground">
-          {metadata.title ?? label}
-        </Link>
-        <span className="mx-2">/</span>
-        <span className="text-foreground">Extract</span>
-      </nav>
-
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight">
-        {metadata.title ?? label} — Full Extract
-      </h1>
-
       <div className="space-y-8">
         {pages.map((page, i) => {
           const extraction = getTextExtraction(label, page.pageId);

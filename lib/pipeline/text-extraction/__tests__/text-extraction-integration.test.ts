@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { lastValueFrom, toArray } from "rxjs";
-import { extractText } from "../text-extraction.js";
-import { pageTextExtractionSchema } from "../text-extraction-schema.js";
+import { extractText } from "../text-extraction";
+import { pageTextExtractionSchema } from "../text-extraction-schema";
 
 const booksRoot = path.resolve("fixtures");
 const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");

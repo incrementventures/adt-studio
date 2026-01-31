@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getBookMetadata, getPage, getTextExtraction } from "@/lib/books";
 
@@ -46,18 +45,6 @@ export default async function PageDetailPage({
 
   return (
     <div>
-      <nav className="mb-4 text-sm text-muted">
-        <Link href="/" className="hover:text-foreground">
-          Books
-        </Link>
-        <span className="mx-2">/</span>
-        <Link href={`/books/${label}`} className="hover:text-foreground">
-          {metadata.title ?? label}
-        </Link>
-        <span className="mx-2">/</span>
-        <span className="text-foreground">{pageId}</span>
-      </nav>
-
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left column: images */}
         <div className="space-y-4">

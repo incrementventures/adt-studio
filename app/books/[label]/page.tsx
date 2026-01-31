@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getBookMetadata, listPages } from "@/lib/books";
 
+
 export default async function BookDetailPage({
   params,
 }: {
@@ -15,19 +16,8 @@ export default async function BookDetailPage({
 
   return (
     <div>
-      <nav className="mb-4 text-sm text-muted">
-        <Link href="/" className="hover:text-foreground">
-          Books
-        </Link>
-        <span className="mx-2">/</span>
-        <span className="text-foreground">{metadata.title ?? label}</span>
-      </nav>
-
       <div className="mb-8 rounded-lg border border-border p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {metadata.title ?? label}
-        </h1>
-        <dl className="mt-4 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+        <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
           {metadata.authors.length > 0 && (
             <div>
               <dt className="text-muted">Authors</dt>
@@ -68,15 +58,7 @@ export default async function BookDetailPage({
         )}
       </div>
 
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Pages</h2>
-        <Link
-          href={`/books/${label}/extract`}
-          className="text-sm text-muted hover:text-foreground"
-        >
-          View full extract
-        </Link>
-      </div>
+      <h2 className="mb-4 text-lg font-semibold">Pages</h2>
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {pages.map((page) => (
           <Link

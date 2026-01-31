@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bookMetadataSchema } from "../metadata-schema.js";
+import { bookMetadataSchema } from "../metadata-schema";
 
 describe("bookMetadataSchema", () => {
   it("parses a fully populated metadata object", () => {

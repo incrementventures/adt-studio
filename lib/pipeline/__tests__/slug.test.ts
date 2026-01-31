@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slugFromPath } from "../slug.js";
+import { slugFromPath } from "../slug";
 
 describe("slugFromPath", () => {
   it("strips directory and extension", () => {

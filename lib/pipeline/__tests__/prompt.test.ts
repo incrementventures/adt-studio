@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderPrompt } from "../prompt.js";
+import { renderPrompt } from "../prompt";
 
 describe("renderPrompt", () => {
   it("renders the metadata_extraction template", async () => {

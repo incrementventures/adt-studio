@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { extract } from "../extract.js";
+import { extract } from "../extract";
 import { lastValueFrom, toArray } from "rxjs";
 
 describe("extract", () => {
@@ -56,6 +56,42 @@ describe("extract", () => {
     const imgPng = fs.readFileSync(path.join(imagesDir, images[0]));
     expect(imgPng[0]).toBe(0x89);
     expect(imgPng[1]).toBe(0x50);
+  });
+
+  it("extracts images nested inside Form XObjects (page range)", async () => {
+    const egyptPdf = path.join(fixtureDir, "ancient_egypt.pdf");
+    const egyptDir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-egypt-"));
+
+    try {
+      const progress = await lastValueFrom(
+        extract(egyptPdf, egyptDir, { startPage: 6, endPage: 6 }).pipe(toArray())
+      );
+
+      // Only 1 page extracted
+      expect(progress.length).toBe(1);
+      expect(progress[0].totalPages).toBe(1);
+
+      const pagesDir = path.join(egyptDir, "ancient-egypt", "extract", "pages");
+
+      // pg006 should exist with images
+      const pg006Images = path.join(pagesDir, "pg006", "images");
+      expect(fs.existsSync(pg006Images)).toBe(true);
+      const images = fs.readdirSync(pg006Images).filter((f) =>
+        f.endsWith(".png")
+      );
+      expect(images.length).toBeGreaterThanOrEqual(1);
+
+      // Verify extracted image is a valid PNG
+      const imgPng = fs.readFileSync(path.join(pg006Images, images[0]));
+      expect(imgPng[0]).toBe(0x89);
+      expect(imgPng[1]).toBe(0x50);
+
+      // Pages outside range should not exist
+      expect(fs.existsSync(path.join(pagesDir, "pg005"))).toBe(false);
+      expect(fs.existsSync(path.join(pagesDir, "pg007"))).toBe(false);
+    } finally {
+      fs.rmSync(egyptDir, { recursive: true, force: true });
+    }
   });
 
   it("emits progress for every page", async () => {

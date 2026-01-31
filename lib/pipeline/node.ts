@@ -1,5 +1,9 @@
 import { Observable, of, shareReplay, last as rxLast } from "rxjs";
-import type { AppConfig } from "../config.js";
+import type { LanguageModel } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
+import type { AppConfig } from "../config";
 
 export type LLMProvider = "openai" | "anthropic" | "google";
 
@@ -60,6 +64,35 @@ export function createContext(
     provider: options.provider ?? "openai",
     cache: new Map(),
   };
+}
+
+const DEFAULT_MODELS: Record<LLMProvider, string> = {
+  openai: "gpt-5.2",
+  anthropic: "claude-sonnet-4-20250514",
+  google: "gemini-2.5-pro",
+};
+
+const MODEL_FACTORIES: Record<string, (id: string) => LanguageModel> = {
+  openai: (id) => openai(id),
+  anthropic: (id) => anthropic(id),
+  google: (id) => google(id),
+};
+
+export function resolveModel(
+  ctx: PipelineContext,
+  configModel?: string
+): LanguageModel {
+  if (configModel) {
+    // Format: "provider:model-id" or just "model-id" (uses ctx.provider)
+    const colonIdx = configModel.indexOf(":");
+    if (colonIdx !== -1) {
+      const provider = configModel.slice(0, colonIdx) as LLMProvider;
+      const modelId = configModel.slice(colonIdx + 1);
+      return MODEL_FACTORIES[provider](modelId);
+    }
+    return MODEL_FACTORIES[ctx.provider](configModel);
+  }
+  return MODEL_FACTORIES[ctx.provider](DEFAULT_MODELS[ctx.provider]);
 }
 
 export function resolveNode<T>(node: Node<T>, ctx: PipelineContext): Promise<T> {

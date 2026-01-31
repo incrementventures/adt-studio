@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { generateObject } from "ai";
 import type { GenerateObjectResult, LanguageModel, ModelMessage } from "ai";
-import { renderPrompt } from "./prompt.js";
+import { renderPrompt } from "./prompt";
 
 type GenerateObjectParams = Parameters<typeof generateObject>[0];
 

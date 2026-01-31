@@ -1,32 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
-import type { LanguageModel } from "ai";
-import { cachedPromptGenerateObject } from "../cache.js";
-import { openai } from "@ai-sdk/openai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
-import { bookMetadataSchema, type BookMetadata } from "./metadata-schema.js";
+import { cachedPromptGenerateObject } from "../cache";
+import { bookMetadataSchema, type BookMetadata } from "./metadata-schema";
 import {
   defineNode,
   createContext,
   resolveNode,
+  resolveModel,
   type PipelineContext,
   type LLMProvider,
   type Node,
-} from "../node.js";
-import { pagesNode, type Page } from "../extract/extract.js";
-import { loadConfig } from "../../config.js";
+} from "../node";
+import { pagesNode, type Page } from "../extract/extract";
+import { loadConfig } from "../../config";
 
-export type { LLMProvider } from "../node.js";
+export type { LLMProvider } from "../node";
 
 const MAX_PAGES = 15;
-
-const DEFAULT_MODELS: Record<LLMProvider, () => LanguageModel> = {
-  openai: () => openai("gpt-5.2"),
-  anthropic: () => anthropic("claude-sonnet-4-20250514"),
-  google: () => google("gemini-2.5-pro"),
-};
 
 export interface MetadataProgress {
   phase: "loading" | "calling-llm" | "done";
@@ -71,9 +62,9 @@ export const metadataNode: Node<BookMetadata> = defineNode<
           const metadataFile = path.join(metadataDir, "metadata.json");
 
           const metadata = await cachedPromptGenerateObject<BookMetadata>({
-            model: DEFAULT_MODELS[ctx.provider](),
+            model: resolveModel(ctx, ctx.config.metadata?.model),
             schema: bookMetadataSchema,
-            promptName: "metadata_extraction",
+            promptName: ctx.config.metadata?.prompt ?? "metadata_extraction",
             promptContext: { pages },
             cacheDir: metadataDir,
           });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderPrompt } from "../../prompt.js";
+import { renderPrompt } from "../../prompt";
 
 const pages = [
   { pageNumber: 1, text: "Page one text", imageBase64: "aW1hZ2UxYmFzZTY0" },

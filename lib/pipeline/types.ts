@@ -7,6 +7,7 @@ export interface BookPaths {
   metadataDir: string;
   metadataFile: string;
   textExtractionDir: string;
+  pageSectioningDir: string;
 }
 
 export function resolveBookPaths(
@@ -19,6 +20,7 @@ export function resolveBookPaths(
   const metadataDir = path.join(bookDir, "metadata");
   const metadataFile = path.join(metadataDir, "metadata.json");
   const textExtractionDir = path.join(bookDir, "text-extraction");
+  const pageSectioningDir = path.join(bookDir, "page-sectioning");
   return {
     bookDir,
     extractDir,
@@ -26,7 +28,8 @@ export function resolveBookPaths(
     metadataDir,
     metadataFile,
     textExtractionDir,
+    pageSectioningDir,
   };
 }
 
-export type { LLMProvider } from "./node.js";
+export type { LLMProvider } from "./node";

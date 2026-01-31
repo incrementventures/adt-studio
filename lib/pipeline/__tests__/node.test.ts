@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { lastValueFrom, toArray, Observable, of } from "rxjs";
-import { defineNode, createContext, resolveNode, type PipelineContext } from "../node.js";
-import type { AppConfig } from "../../config.js";
+import { defineNode, createContext, resolveNode, type PipelineContext } from "../node";
+import type { AppConfig } from "../../config";
 
 function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   return createContext("test-label", {

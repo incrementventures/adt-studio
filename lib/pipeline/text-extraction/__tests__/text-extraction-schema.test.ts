@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pageTextExtractionSchema } from "../text-extraction-schema.js";
+import { pageTextExtractionSchema } from "../text-extraction-schema";
 
 describe("pageTextExtractionSchema", () => {
   it("parses a fully populated object", () => {
