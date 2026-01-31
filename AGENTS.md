@@ -48,7 +48,7 @@ Key properties:
 - **`resolve`** — returns an `Observable` that emits progress events and a final result. Dependencies are pulled lazily via `resolveNode(upstreamNode, ctx)`.
 - **Caching** — `defineNode` wraps the observable with `shareReplay` and stores it on `ctx.cache`, so multiple downstream consumers share one execution.
 - **Progress + result union** — nodes emit both progress objects (for UI/CLI feedback) and a final typed result on the same observable. The convention is `defineNode<Result | Progress>` with a cast to `Node<Result>`.
-- **CLI wrapper** — each module exports a convenience function (e.g., `extract()`, `extractMetadata()`, `extractText()`) that creates a `PipelineContext`, resolves the node, and re-emits only the progress events for CLI consumers.
+- **CLI wrapper** — each module exports a convenience function (e.g., `extract()`, `extractMetadata()`, `classifyText()`) that creates a `PipelineContext`, resolves the node, and re-emits only the progress events for CLI consumers.
 
 ### Storage
 
@@ -109,20 +109,20 @@ Sends the first pages of an extracted book to an LLM and writes structured metad
 
 **CLI:** `pnpm pipeline metadata <label> [--provider openai|anthropic|google]`
 
-### `textExtractionNode` (`lib/pipeline/text-extraction/text-extraction.ts`)
+### `textClassificationNode` (`lib/pipeline/text-classification/text-classification.ts`)
 
 Sends each page image to an LLM to extract structured text groups with reading order and type annotations.
 
 **Depends on:** `pagesNode`, `metadataNode`
-**Output:** `books/<label>/text-extraction/<pgNNN>.json` — one JSON file per page with text groups, reading order, and type labels.
+**Output:** `books/<label>/text-classification/<pgNNN>.json` — one JSON file per page with text groups, reading order, and type labels.
 
-**CLI:** `pnpm pipeline text-extraction <label> [--provider openai|anthropic|google]`
+**CLI:** `pnpm pipeline text-classification <label> [--provider openai|anthropic|google]`
 
 ### `sectionsNode` (`lib/pipeline/page-sectioning/page-sectioning.ts`)
 
 Groups text extraction results into semantic sections (e.g., "main body", "sidebar", "activity") per page, using configurable `section_types` from `config.yaml`.
 
-**Depends on:** `pagesNode`, `textExtractionNode`
+**Depends on:** `pagesNode`, `textClassificationNode`
 **Output:** `books/<label>/page-sectioning/<pgNNN>.json` — one JSON file per page with section assignments for each text group.
 
 **CLI:** `pnpm pipeline page-sectioning <label> [--provider openai|anthropic|google]`

@@ -3,11 +3,12 @@ import path from "node:path";
 import { resolveBookPaths } from "./pipeline/types";
 import { bookMetadataSchema, type BookMetadata } from "./pipeline/metadata/metadata-schema";
 import type { PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
+import type { PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
 
 interface TextEntry {
   text_type: string;
   text: string;
-  is_pruned?: boolean;
+  is_pruned: boolean;
 }
 
 interface TextGroup {
@@ -16,7 +17,7 @@ interface TextGroup {
   texts: TextEntry[];
 }
 
-export interface PageTextExtraction {
+export interface PageTextClassification {
   reasoning: string;
   groups: TextGroup[];
 }
@@ -88,12 +89,12 @@ export function getPage(label: string, pageId: string): PageSummary | null {
   return buildPageSummary(paths.pagesDir, pageId);
 }
 
-export function getLatestTextExtractionPath(
+export function getLatestTextClassificationPath(
   label: string,
   pageId: string
 ): { filePath: string; version: number } | null {
   const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.textExtractionDir;
+  const dir = paths.textClassificationDir;
   const baseFile = path.join(dir, `${pageId}.json`);
   if (!fs.existsSync(baseFile)) return null;
 
@@ -119,12 +120,12 @@ export function getLatestTextExtractionPath(
   return { filePath: versionedFile, version: maxVersion };
 }
 
-export function listTextExtractionVersions(
+export function listTextClassificationVersions(
   label: string,
   pageId: string
 ): number[] {
   const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.textExtractionDir;
+  const dir = paths.textClassificationDir;
   const baseFile = path.join(dir, `${pageId}.json`);
   if (!fs.existsSync(baseFile)) return [];
 
@@ -137,59 +138,59 @@ export function listTextExtractionVersions(
   return [...new Set(versions)].sort((a, b) => a - b);
 }
 
-export function getTextExtractionVersion(
+export function getTextClassificationVersion(
   label: string,
   pageId: string,
   version: number
-): PageTextExtraction | null {
+): PageTextClassification | null {
   const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.textExtractionDir;
+  const dir = paths.textClassificationDir;
   const filePath =
     version === 1
       ? path.join(dir, `${pageId}.json`)
       : path.join(dir, `${pageId}.v${String(version).padStart(3, "0")}.json`);
   if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageTextExtraction;
+  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageTextClassification;
 }
 
-export function getCurrentTextExtractionVersion(
+export function getCurrentTextClassificationVersion(
   label: string,
   pageId: string
 ): number {
   const paths = resolveBookPaths(label, getBooksRoot());
-  const currentFile = path.join(paths.textExtractionDir, `${pageId}.current`);
+  const currentFile = path.join(paths.textClassificationDir, `${pageId}.current`);
   if (fs.existsSync(currentFile)) {
     const content = fs.readFileSync(currentFile, "utf-8").trim();
     const v = parseInt(content, 10);
     if (!isNaN(v)) return v;
   }
   // Default to latest version
-  const versions = listTextExtractionVersions(label, pageId);
+  const versions = listTextClassificationVersions(label, pageId);
   return versions.length > 0 ? versions[versions.length - 1] : 1;
 }
 
-export function setCurrentTextExtractionVersion(
+export function setCurrentTextClassificationVersion(
   label: string,
   pageId: string,
   version: number
 ): void {
   const paths = resolveBookPaths(label, getBooksRoot());
   fs.writeFileSync(
-    path.join(paths.textExtractionDir, `${pageId}.current`),
+    path.join(paths.textClassificationDir, `${pageId}.current`),
     String(version),
     "utf-8"
   );
 }
 
-export function getTextExtraction(
+export function getTextClassification(
   label: string,
   pageId: string
-): { data: PageTextExtraction; version: number } | null {
-  const versions = listTextExtractionVersions(label, pageId);
+): { data: PageTextClassification; version: number } | null {
+  const versions = listTextClassificationVersions(label, pageId);
   if (versions.length === 0) return null;
 
-  const current = getCurrentTextExtractionVersion(label, pageId);
-  const data = getTextExtractionVersion(label, pageId, current);
+  const current = getCurrentTextClassificationVersion(label, pageId);
+  const data = getTextClassificationVersion(label, pageId, current);
   if (!data) return null;
   return { data, version: current };
 }
@@ -204,7 +205,17 @@ export function resolveExtractedImagePath(
   pageId: string,
   imageId: string
 ): string {
-  const paths = resolveBookPaths(label, getBooksRoot());
+  const booksRoot = getBooksRoot();
+  const paths = resolveBookPaths(label, booksRoot);
+
+  // Look up path from classification entry
+  const classification = getImageClassification(label, pageId);
+  const entry = classification?.data.images.find((i) => i.image_id === imageId);
+  if (entry?.path) {
+    return path.join(paths.bookDir, entry.path);
+  }
+
+  // Fallback for images without classification data
   return path.join(paths.pagesDir, pageId, "images", `${imageId}.png`);
 }
 
@@ -213,6 +224,165 @@ export function resolveCoverImagePath(label: string): string | null {
   if (!metadata?.cover_page_number) return null;
   const pageId = "pg" + String(metadata.cover_page_number).padStart(3, "0");
   return resolvePageImagePath(label, pageId);
+}
+
+export function getLatestImageClassificationPath(
+  label: string,
+  pageId: string
+): { filePath: string; version: number } | null {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const dir = paths.imageClassificationDir;
+  const baseFile = path.join(dir, `${pageId}.json`);
+  if (!fs.existsSync(baseFile)) return null;
+
+  if (!fs.existsSync(dir)) return null;
+  const versionRe = new RegExp(`^${pageId}\\.v(\\d{3})\\.json$`);
+  let maxVersion = 0;
+  for (const f of fs.readdirSync(dir)) {
+    const m = versionRe.exec(f);
+    if (m) {
+      const v = parseInt(m[1], 10);
+      if (v > maxVersion) maxVersion = v;
+    }
+  }
+
+  if (maxVersion === 0) {
+    return { filePath: baseFile, version: 1 };
+  }
+
+  const versionedFile = path.join(
+    dir,
+    `${pageId}.v${String(maxVersion).padStart(3, "0")}.json`
+  );
+  return { filePath: versionedFile, version: maxVersion };
+}
+
+export function listImageClassificationVersions(
+  label: string,
+  pageId: string
+): number[] {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const dir = paths.imageClassificationDir;
+  const baseFile = path.join(dir, `${pageId}.json`);
+  if (!fs.existsSync(baseFile)) return [];
+
+  const versions = [1];
+  const versionRe = new RegExp(`^${pageId}\\.v(\\d{3})\\.json$`);
+  for (const f of fs.readdirSync(dir)) {
+    const m = versionRe.exec(f);
+    if (m) versions.push(parseInt(m[1], 10));
+  }
+  return [...new Set(versions)].sort((a, b) => a - b);
+}
+
+export function getImageClassificationVersion(
+  label: string,
+  pageId: string,
+  version: number
+): PageImageClassification | null {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const dir = paths.imageClassificationDir;
+  const filePath =
+    version === 1
+      ? path.join(dir, `${pageId}.json`)
+      : path.join(dir, `${pageId}.v${String(version).padStart(3, "0")}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageImageClassification;
+}
+
+export function getCurrentImageClassificationVersion(
+  label: string,
+  pageId: string
+): number {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const currentFile = path.join(paths.imageClassificationDir, `${pageId}.current`);
+  if (fs.existsSync(currentFile)) {
+    const content = fs.readFileSync(currentFile, "utf-8").trim();
+    const v = parseInt(content, 10);
+    if (!isNaN(v)) return v;
+  }
+  const versions = listImageClassificationVersions(label, pageId);
+  return versions.length > 0 ? versions[versions.length - 1] : 1;
+}
+
+export function setCurrentImageClassificationVersion(
+  label: string,
+  pageId: string,
+  version: number
+): void {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  fs.writeFileSync(
+    path.join(paths.imageClassificationDir, `${pageId}.current`),
+    String(version),
+    "utf-8"
+  );
+}
+
+export function getImageClassification(
+  label: string,
+  pageId: string
+): { data: PageImageClassification; version: number } | null {
+  const versions = listImageClassificationVersions(label, pageId);
+  if (versions.length === 0) return null;
+
+  const current = getCurrentImageClassificationVersion(label, pageId);
+  const data = getImageClassificationVersion(label, pageId, current);
+  if (!data) return null;
+  return { data, version: current };
+}
+
+/**
+ * Load extracted images as base64, excluding any pruned by image classification.
+ * When classification data exists, uses entry paths to resolve files.
+ * Falls back to scanning imagesDir when no classification is available.
+ * @param bookDir  Absolute path to the book root directory.
+ * @param imagesDir  Path to the extraction images directory.
+ * @param imageClassification  Pre-loaded classification (if null/undefined, no filtering is applied).
+ */
+export function loadUnprunedImagesFromDir(
+  bookDir: string,
+  imagesDir: string,
+  imageClassification?: PageImageClassification | null,
+): { image_id: string; imageBase64: string }[] {
+  const images: { image_id: string; imageBase64: string }[] = [];
+
+  if (imageClassification) {
+    // Use classification entries — each has a path relative to bookDir
+    for (const entry of imageClassification.images) {
+      if (entry.is_pruned) continue;
+      const filePath = path.join(bookDir, entry.path);
+      if (!fs.existsSync(filePath)) continue;
+      const imgBase64 = fs.readFileSync(filePath).toString("base64");
+      images.push({ image_id: entry.image_id, imageBase64: imgBase64 });
+    }
+  } else if (fs.existsSync(imagesDir)) {
+    // No classification — load all images from extraction dir
+    const imageFiles = fs
+      .readdirSync(imagesDir)
+      .filter((f) => /^pg\d{3}_im\d{3}\.png$/i.test(f))
+      .sort();
+    for (const imgFile of imageFiles) {
+      const imageId = imgFile.replace(/\.png$/i, "");
+      const imgBase64 = fs.readFileSync(path.join(imagesDir, imgFile)).toString("base64");
+      images.push({ image_id: imageId, imageBase64: imgBase64 });
+    }
+  }
+
+  return images;
+}
+
+/**
+ * Load extracted images for a page as base64, excluding any pruned by image classification.
+ * Convenience wrapper that resolves paths from label/pageId.
+ */
+export function loadUnprunedImages(
+  label: string,
+  pageId: string
+): { image_id: string; imageBase64: string }[] {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const imagesDir = path.join(paths.pagesDir, pageId, "images");
+  const result = getImageClassification(label, pageId);
+  return loadUnprunedImagesFromDir(paths.bookDir, imagesDir, result?.data);
 }
 
 export function getPageSectioning(
@@ -226,6 +396,7 @@ export function getPageSectioning(
 }
 
 export { type PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
+export { type PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
 
 function countPages(pagesDir: string): number {
   if (!fs.existsSync(pagesDir)) return 0;
@@ -239,7 +410,7 @@ function buildPageSummary(pagesDir: string, pageId: string): PageSummary {
 
   if (fs.existsSync(imagesDir)) {
     for (const f of fs.readdirSync(imagesDir)) {
-      if (f.endsWith(".png")) {
+      if (/^pg\d{3}_im\d{3}\.png$/.test(f)) {
         imageIds.push(f.replace(/\.png$/, ""));
       }
     }

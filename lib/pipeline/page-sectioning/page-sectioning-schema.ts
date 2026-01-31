@@ -1,11 +1,15 @@
 import { z } from "zod/v4";
 
-export function buildPageSectioningSchema(sectionTypeKeys: [string, ...string[]]) {
+export function buildPageSectioningSchema(
+  sectionTypeKeys: [string, ...string[]],
+  validPartIds: [string, ...string[]]
+) {
   const sectionTypeEnum = z.enum(sectionTypeKeys);
+  const partIdEnum = z.enum(validPartIds);
 
   const sectionSchema = z.object({
     section_type: sectionTypeEnum,
-    part_ids: z.array(z.string()),
+    part_ids: z.array(partIdEnum),
     background_color: z.string(),
     text_color: z.string(),
     page_number: z.number().int().nullable(),
@@ -26,4 +30,6 @@ export type PageSectioning = {
     text_color: string;
     page_number: number | null;
   }>;
+  text_classification_version?: number;
+  image_classification_version?: number;
 };

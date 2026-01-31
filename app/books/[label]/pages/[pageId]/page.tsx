@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getBookMetadata, getPage, getTextExtraction } from "@/lib/books";
+import { getBookMetadata, getPage, getTextClassification } from "@/lib/books";
 
 const TEXT_TYPE_COLORS: Record<string, string> = {
   book_title: "bg-purple-100 text-purple-800",
@@ -40,7 +40,7 @@ export default async function PageDetailPage({
   const page = getPage(label, pageId);
   if (!page) notFound();
 
-  const extractionResult = getTextExtraction(label, pageId);
+  const extractionResult = getTextClassification(label, pageId);
   const extraction = extractionResult?.data ?? null;
 
   return (
@@ -74,7 +74,7 @@ export default async function PageDetailPage({
           )}
         </div>
 
-        {/* Right column: text extraction */}
+        {/* Right column: text classification */}
         <div className="space-y-4">
           {extraction ? (
             <>
@@ -115,7 +115,7 @@ export default async function PageDetailPage({
             </>
           ) : (
             <p className="text-muted">
-              No text extraction available for this page.
+              No text classification available for this page.
             </p>
           )}
         </div>

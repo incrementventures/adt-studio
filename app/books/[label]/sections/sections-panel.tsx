@@ -8,7 +8,7 @@ import { TEXT_TYPE_COLORS } from "../extract/text-type-badge";
 interface TextEntry {
   text_type: string;
   text: string;
-  is_pruned?: boolean;
+  is_pruned: boolean;
 }
 
 interface TextGroup {
@@ -17,7 +17,7 @@ interface TextGroup {
   texts: TextEntry[];
 }
 
-interface PageTextExtraction {
+interface PageTextClassification {
   reasoning: string;
   groups: TextGroup[];
 }
@@ -30,7 +30,7 @@ interface SectionsPanelProps {
   label: string;
   pageId: string;
   sectioning: PageSectioning | null;
-  extraction: PageTextExtraction | null;
+  extraction: PageTextClassification | null;
   imageIds: string[];
   sectionTypes: Record<string, string>;
 }
@@ -125,17 +125,15 @@ export function SectionsPanel({
 
       {sectioning ? (
         <div className="space-y-4 p-4">
+          {sectioning.sections.length === 0 && (
+            <p className="text-sm italic text-muted">
+              No sections found for this page.
+            </p>
+          )}
           {sectioning.sections.map((section, si) => {
             const bgColor = section.background_color || "#ffffff";
             const txtColor = section.text_color || "#000000";
             const typeDescription = sectionTypes[section.section_type] ?? "";
-
-            const groupParts = section.part_ids.filter((id) =>
-              id.includes("_gp")
-            );
-            const imageParts = section.part_ids.filter(
-              (id) => !id.includes("_gp")
-            );
 
             return (
               <div
@@ -171,78 +169,61 @@ export function SectionsPanel({
                   )}
                 </div>
 
-                {/* Section content */}
-                <div className="grid gap-6 px-4 pb-4 lg:grid-cols-[280px_1fr]">
-                  {/* Left: images */}
-                  <div className="space-y-2">
-                    {imageParts.length > 0 ? (
-                      imageParts.map((imageId) => (
-                        <div key={imageId} className="space-y-1">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={`/api/books/${label}/pages/${pageId}/images/${imageId}`}
-                            alt={imageId}
-                            className="w-full rounded border border-border"
-                          />
-                          <span className="block text-center font-mono text-[10px] text-faint">
-                            {imageId}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs italic text-faint">No images</p>
-                    )}
-                  </div>
-
-                  {/* Right: text groups */}
-                  <div className="space-y-3">
-                    {groupParts.map((partId) => {
-                      const group = groupLookup.get(partId);
+                {/* Section content — parts in order */}
+                <div className="space-y-3 px-4 pb-4">
+                  {section.part_ids.length === 0 && (
+                    <p className="text-sm italic text-faint">
+                      No parts assigned to this section.
+                    </p>
+                  )}
+                  {section.part_ids.map((partId) => {
+                    const group = groupLookup.get(partId);
+                    if (group) {
                       return (
                         <div key={partId} className="rounded border border-border bg-background p-3">
                           <div className="mb-1.5 flex items-center justify-between">
-                            {group && (
-                              <span className="text-xs font-medium uppercase tracking-wider text-faint">
-                                {group.group_type}
-                              </span>
-                            )}
+                            <span className="text-xs font-medium uppercase tracking-wider text-faint">
+                              {group.group_type}
+                            </span>
                             <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
                               {partId}
                             </span>
                           </div>
-                          {group ? (
-                            <div className="space-y-1.5">
-                              {group.texts.map((entry, ti) => (
-                                <div
-                                  key={ti}
-                                  className={`flex items-start justify-between gap-3${entry.is_pruned ? " opacity-40 line-through" : ""}`}
+                          <div className="space-y-1.5">
+                            {group.texts.map((entry, ti) => (
+                              <div
+                                key={ti}
+                                className={`flex items-start justify-between gap-3${entry.is_pruned ? " opacity-40 line-through" : ""}`}
+                              >
+                                <span className="flex-1 font-mono text-xs whitespace-pre-wrap">
+                                  {entry.text}
+                                </span>
+                                <span
+                                  className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor(entry.text_type)}`}
                                 >
-                                  <span className="flex-1 font-mono text-xs whitespace-pre-wrap">
-                                    {entry.text}
-                                  </span>
-                                  <span
-                                    className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor(entry.text_type)}`}
-                                  >
-                                    {entry.text_type}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm italic text-faint">
-                              Group not found in extraction
-                            </p>
-                          )}
+                                  {entry.text_type}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       );
-                    })}
-
-                    {section.part_ids.length === 0 && (
-                      <p className="text-sm italic text-faint">
-                        No parts assigned to this section.
-                      </p>
-                    )}
-                  </div>
+                    }
+                    // Image part
+                    return (
+                      <div key={partId} className="max-w-xs">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/api/books/${label}/pages/${pageId}/images/${partId}?v=${sectioning?.image_classification_version ?? ""}`}
+                          alt={partId}
+                          className="w-full rounded-t border border-border"
+                        />
+                        <div className="rounded-b border border-t-0 border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                          {partId}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

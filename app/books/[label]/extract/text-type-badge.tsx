@@ -97,7 +97,7 @@ export function TextTypeBadge({
         if (!ok) setType(prev);
       } else {
         const res = await fetch(
-          `/api/books/${label}/pages/${pageId}/text-extraction`,
+          `/api/books/${label}/pages/${pageId}/text-classification`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },

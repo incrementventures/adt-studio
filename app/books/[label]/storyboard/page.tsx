@@ -1,13 +1,15 @@
 import Link from "next/link";
 import {
   listPages,
-  getTextExtraction,
-  listTextExtractionVersions,
+  getTextClassification,
+  listTextClassificationVersions,
   getPageSectioning,
+  getImageClassification,
+  listImageClassificationVersions,
 } from "@/lib/books";
 import { textTypeKeys, groupTypeKeys, getSectionTypes } from "@/lib/config";
-import { LightboxImage } from "../extract/image-lightbox";
-import { TextExtractionPanel } from "../extract/text-extraction-panel";
+import { TextClassificationPanel } from "../extract/text-classification-panel";
+import { ImageClassificationPanel } from "../extract/image-classification-panel";
 import { SectionsPanel } from "../sections/sections-panel";
 
 export default async function StoryboardPage({
@@ -23,9 +25,11 @@ export default async function StoryboardPage({
     <div>
       <div className="space-y-8">
         {pages.map((page, i) => {
-          const extraction = getTextExtraction(label, page.pageId);
-          const availableVersions = listTextExtractionVersions(label, page.pageId);
+          const extraction = getTextClassification(label, page.pageId);
+          const availableVersions = listTextClassificationVersions(label, page.pageId);
           const sectioning = getPageSectioning(label, page.pageId);
+          const imageClassificationResult = getImageClassification(label, page.pageId);
+          const imageClassificationVersions = listImageClassificationVersions(label, page.pageId);
           return (
             <section
               key={page.pageId}
@@ -39,44 +43,29 @@ export default async function StoryboardPage({
                 Page {i + 1}
               </Link>
 
-              <div className="grid gap-6 p-4 lg:grid-cols-[280px_1fr]">
-                <div className="space-y-3">
-                  <LightboxImage
-                    src={`/api/books/${label}/pages/${page.pageId}/image`}
-                    alt={`Page ${i + 1}`}
-                    className="w-full rounded-lg border border-border"
-                  />
-                  {page.imageIds.length > 0 && (
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {page.imageIds.map((imageId) => (
-                        <LightboxImage
-                          key={imageId}
-                          src={`/api/books/${label}/pages/${page.pageId}/images/${imageId}`}
-                          alt={imageId}
-                          className="rounded border border-border"
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {/* Image Classification */}
+              <ImageClassificationPanel
+                label={label}
+                pageId={page.pageId}
+                pageIndex={i}
+                imageIds={page.imageIds}
+                initialClassification={imageClassificationResult?.data ?? null}
+                initialVersion={imageClassificationResult?.version ?? 1}
+                availableVersions={imageClassificationVersions}
+              />
 
-                {extraction ? (
-                  <TextExtractionPanel
-                    label={label}
-                    pageId={page.pageId}
-                    initialData={extraction.data}
-                    initialVersion={extraction.version}
-                    availableVersions={availableVersions}
-                    textTypes={textTypeKeys}
-                    groupTypes={groupTypeKeys}
-                  />
-                ) : (
-                  <p className="text-muted text-sm">
-                    No text extraction for this page.
-                  </p>
-                )}
-              </div>
+              {/* Text Classification */}
+              <TextClassificationPanel
+                label={label}
+                pageId={page.pageId}
+                initialData={extraction?.data ?? null}
+                initialVersion={extraction?.version ?? 1}
+                availableVersions={availableVersions}
+                textTypes={textTypeKeys}
+                groupTypes={groupTypeKeys}
+              />
 
+              {/* Sections */}
               <SectionsPanel
                 label={label}
                 pageId={page.pageId}

@@ -8,7 +8,7 @@ export const groupTypeEnum = z.enum(groupTypeKeys);
 export const textEntrySchema = z.object({
   text_type: textTypeEnum,
   text: z.string(),
-  is_pruned: z.boolean().optional(),
+  is_pruned: z.boolean().default(false),
 });
 
 export const textGroupSchema = z.object({
@@ -16,15 +16,31 @@ export const textGroupSchema = z.object({
   texts: z.array(textEntrySchema),
 });
 
-export const pageTextExtractionSchema = z.object({
+export const pageTextClassificationSchema = z.object({
   reasoning: z.string(),
   groups: z.array(textGroupSchema),
+});
+
+/** Schema sent to the LLM — no is_pruned (applied post-generation). */
+const llmTextEntrySchema = z.object({
+  text_type: textTypeEnum,
+  text: z.string(),
+});
+
+const llmTextGroupSchema = z.object({
+  group_type: groupTypeEnum,
+  texts: z.array(llmTextEntrySchema),
+});
+
+export const llmPageTextClassificationSchema = z.object({
+  reasoning: z.string(),
+  groups: z.array(llmTextGroupSchema),
 });
 
 export type TextEntry = z.infer<typeof textEntrySchema>;
 // group_id is stamped after LLM generation, not part of the LLM schema
 export type TextGroup = z.infer<typeof textGroupSchema> & { group_id?: string };
-export type PageTextExtraction = Omit<z.infer<typeof pageTextExtractionSchema>, "groups"> & {
+export type PageTextClassification = Omit<z.infer<typeof pageTextClassificationSchema>, "groups"> & {
   groups: TextGroup[];
 };
 
@@ -33,7 +49,7 @@ export type PageTextExtraction = Omit<z.infer<typeof pageTextExtractionSchema>, 
  * filtering out pruned text entries and dropping groups that become empty.
  */
 export function buildUnprunedGroupSummaries(
-  extraction: PageTextExtraction,
+  extraction: PageTextClassification,
   pageId: string
 ): { group_id: string; group_type: string; text: string }[] {
   return extraction.groups.flatMap((g, idx) => {

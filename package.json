@@ -11,8 +11,8 @@
     "pipeline": "tsx lib/cli/pipeline.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run metadata-integration text-extraction-integration",
-    "test:recache": "RECACHE=1 vitest run metadata-integration text-extraction-integration",
+    "test:integration": "vitest run metadata-integration text-classification-integration",
+    "test:recache": "RECACHE=1 vitest run metadata-integration text-classification-integration",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -26,7 +26,9 @@
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-image-crop": "^11.0.10",
     "rxjs": "^7.8.2",
+    "sharp": "^0.34.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sharp": "^0.32.0",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",

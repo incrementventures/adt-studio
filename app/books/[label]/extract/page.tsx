@@ -1,12 +1,12 @@
 import Link from "next/link";
 import {
   listPages,
-  getTextExtraction,
-  listTextExtractionVersions,
+  getTextClassification,
+  listTextClassificationVersions,
 } from "@/lib/books";
 import { textTypeKeys, groupTypeKeys } from "@/lib/config";
 import { LightboxImage } from "./image-lightbox";
-import { TextExtractionPanel } from "./text-extraction-panel";
+import { TextClassificationPanel } from "./text-classification-panel";
 
 export default async function ExtractPage({
   params,
@@ -20,8 +20,8 @@ export default async function ExtractPage({
     <div>
       <div className="space-y-8">
         {pages.map((page, i) => {
-          const extraction = getTextExtraction(label, page.pageId);
-          const availableVersions = listTextExtractionVersions(label, page.pageId);
+          const extraction = getTextClassification(label, page.pageId);
+          const availableVersions = listTextClassificationVersions(label, page.pageId);
           return (
             <section
               key={page.pageId}
@@ -61,29 +61,16 @@ export default async function ExtractPage({
                 </pre>
               </div>
 
-              {/* Bottom: text extraction */}
-              {extraction ? (
-                <TextExtractionPanel
-                  label={label}
-                  pageId={page.pageId}
-                  initialData={extraction.data}
-                  initialVersion={extraction.version}
-                  availableVersions={availableVersions}
-                  textTypes={textTypeKeys}
-                  groupTypes={groupTypeKeys}
-                />
-              ) : (
-                <div className="mx-4 mb-4 overflow-hidden rounded-lg border border-border">
-                  <div className="bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">
-                    Text Extraction
-                  </div>
-                  <div className="p-4">
-                    <p className="text-muted text-sm">
-                      No text extraction for this page.
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* Bottom: text classification */}
+              <TextClassificationPanel
+                label={label}
+                pageId={page.pageId}
+                initialData={extraction?.data ?? null}
+                initialVersion={extraction?.version ?? 1}
+                availableVersions={availableVersions}
+                textTypes={textTypeKeys}
+                groupTypes={groupTypeKeys}
+              />
             </section>
           );
         })}

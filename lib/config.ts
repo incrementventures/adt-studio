@@ -14,7 +14,7 @@ const configSchema = z.object({
       model: z.string().optional(),
     })
     .optional(),
-  text_extraction: z
+  text_classification: z
     .object({
       prompt: z.string().optional(),
       model: z.string().optional(),
@@ -30,6 +30,23 @@ const configSchema = z.object({
       prompt: z.string().optional(),
       model: z.string().optional(),
       concurrency: z.number().int().min(1).optional(),
+    })
+    .optional(),
+  image_classification: z
+    .object({
+      prompt: z.string().optional(),
+      model: z.string().optional(),
+      concurrency: z.number().int().min(1).optional(),
+    })
+    .optional(),
+  image_filters: z
+    .object({
+      size: z
+        .object({
+          min_side: z.number().optional(),
+          max_side: z.number().optional(),
+        })
+        .optional(),
     })
     .optional(),
 });
@@ -65,6 +82,12 @@ export const groupTypeKeys = Object.keys(
 
 export function getPrunedTextTypes(): string[] {
   return config.pruned_text_types ?? [];
+}
+
+export function getImageFilters(): {
+  size?: { min_side?: number; max_side?: number };
+} {
+  return loadConfig().image_filters ?? {};
 }
 
 export function getSectionTypes(): Record<string, string> {

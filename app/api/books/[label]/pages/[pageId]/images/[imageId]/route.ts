@@ -23,6 +23,7 @@ export async function GET(
   }
 
   const filePath = resolveExtractedImagePath(label, pageId, imageId);
+
   if (!fs.existsSync(filePath)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -31,7 +32,7 @@ export async function GET(
   return new NextResponse(buffer, {
     headers: {
       "Content-Type": "image/png",
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "public, max-age=31536000, immutable",
     },
   });
 }

@@ -1,6 +1,7 @@
 import { extract } from "../pipeline/extract/extract.js";
 import { extractMetadata } from "../pipeline/metadata/metadata.js";
-import { extractText } from "../pipeline/text-extraction/text-extraction.js";
+import { classifyText } from "../pipeline/text-classification/text-classification.js";
+import { classifyImages } from "../pipeline/image-classification/image-classification.js";
 import { sectionPages } from "../pipeline/page-sectioning/page-sectioning.js";
 import type { LLMProvider } from "../pipeline/types.js";
 import { runWithProgress } from "./progress.js";
@@ -12,11 +13,12 @@ const USAGE = `Usage: pnpm pipeline <command> [args] [options]
 Commands:
   extract <pdf_path>                Extract pages from a PDF
   metadata <label>                  Extract metadata via LLM
-  text-extraction <label>           Extract structured text via LLM
+  text-classification <label>       Classify structured text via LLM
+  image-classification <label>      Classify images by size filters
   page-sectioning <label>           Group text into sections via LLM
 
 Options:
-  --provider openai|anthropic|google   LLM provider (metadata, text-extraction, page-sectioning)`;
+  --provider openai|anthropic|google   LLM provider (metadata, text-classification, page-sectioning)`;
 
 const args = process.argv.slice(2);
 const subcommand = args[0];
@@ -74,20 +76,36 @@ switch (subcommand) {
     break;
   }
 
-  case "text-extraction": {
+  case "text-classification": {
     if (!positional) {
       console.error(
-        "Usage: pnpm pipeline text-extraction <label> [--provider openai|anthropic|google]"
+        "Usage: pnpm pipeline text-classification <label> [--provider openai|anthropic|google]"
       );
       process.exit(1);
     }
     await runWithProgress(
-      extractText(positional, { provider }),
+      classifyText(positional, { provider }),
       (p) => ({
         current: p.page ?? 0,
         total: p.totalPages ?? 0,
       }),
-      { label: "text-extraction", unit: "pages" }
+      { label: "text-classification", unit: "pages" }
+    );
+    break;
+  }
+
+  case "image-classification": {
+    if (!positional) {
+      console.error("Usage: pnpm pipeline image-classification <label>");
+      process.exit(1);
+    }
+    await runWithProgress(
+      classifyImages(positional),
+      (p) => ({
+        current: p.page ?? 0,
+        total: p.totalPages ?? 0,
+      }),
+      { label: "image-classification", unit: "pages" }
     );
     break;
   }

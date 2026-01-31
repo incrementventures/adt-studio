@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   getBooksRoot,
-  getTextExtraction,
+  getTextClassification,
+  getImageClassification,
+  loadUnprunedImages,
   resolvePageImagePath,
 } from "@/lib/books";
 import { loadConfig } from "@/lib/config";
@@ -11,7 +13,7 @@ import { resolveBookPaths } from "@/lib/pipeline/types";
 import { createContext, resolveModel } from "@/lib/pipeline/node";
 import type { LLMProvider } from "@/lib/pipeline/node";
 import { sectionPage } from "@/lib/pipeline/page-sectioning/section-page";
-import { buildUnprunedGroupSummaries } from "@/lib/pipeline/text-extraction/text-extraction-schema";
+import { buildUnprunedGroupSummaries } from "@/lib/pipeline/text-classification/text-classification-schema";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
@@ -48,28 +50,14 @@ export async function POST(
   }
   const pageImageBase64 = fs.readFileSync(pageImagePath).toString("base64");
 
-  // Load extracted images
-  const imagesDir = path.join(paths.pagesDir, pageId, "images");
-  const images: { image_id: string; imageBase64: string }[] = [];
-  if (fs.existsSync(imagesDir)) {
-    const imageFiles = fs
-      .readdirSync(imagesDir)
-      .filter((f) => /\.png$/i.test(f))
-      .sort();
-    for (const imgFile of imageFiles) {
-      const imageId = imgFile.replace(/\.png$/i, "");
-      const imgBase64 = fs
-        .readFileSync(path.join(imagesDir, imgFile))
-        .toString("base64");
-      images.push({ image_id: imageId, imageBase64: imgBase64 });
-    }
-  }
+  // Load extracted images, filtering out pruned ones
+  const images = loadUnprunedImages(label, pageId);
 
-  // Load current text extraction
-  const extractionResult = getTextExtraction(label, pageId);
+  // Load current text classification
+  const extractionResult = getTextClassification(label, pageId);
   if (!extractionResult) {
     return NextResponse.json(
-      { error: "No text extraction found for this page" },
+      { error: "No text classification found for this page" },
       { status: 404 }
     );
   }
@@ -103,6 +91,11 @@ export async function POST(
     promptName,
     cacheDir: sectioningDir,
   });
+
+  // Record which classification versions were used
+  const imageClassResult = getImageClassification(label, pageId);
+  sectioning.text_classification_version = extractionResult.version;
+  sectioning.image_classification_version = imageClassResult?.version;
 
   // Write result to disk
   fs.writeFileSync(

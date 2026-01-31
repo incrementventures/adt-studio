@@ -6,7 +6,8 @@ export interface BookPaths {
   pagesDir: string;
   metadataDir: string;
   metadataFile: string;
-  textExtractionDir: string;
+  textClassificationDir: string;
+  imageClassificationDir: string;
   pageSectioningDir: string;
 }
 
@@ -19,7 +20,8 @@ export function resolveBookPaths(
   const pagesDir = path.join(extractDir, "pages");
   const metadataDir = path.join(bookDir, "metadata");
   const metadataFile = path.join(metadataDir, "metadata.json");
-  const textExtractionDir = path.join(bookDir, "text-extraction");
+  const textClassificationDir = path.join(bookDir, "text-classification");
+  const imageClassificationDir = path.join(bookDir, "image-classification");
   const pageSectioningDir = path.join(bookDir, "page-sectioning");
   return {
     bookDir,
@@ -27,7 +29,8 @@ export function resolveBookPaths(
     pagesDir,
     metadataDir,
     metadataFile,
-    textExtractionDir,
+    textClassificationDir,
+    imageClassificationDir,
     pageSectioningDir,
   };
 }

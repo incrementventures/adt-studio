@@ -2,7 +2,7 @@ import Link from "next/link";
 import {
   listPages,
   getPageSectioning,
-  getTextExtraction,
+  getTextClassification,
 } from "@/lib/books";
 import { getSectionTypes } from "@/lib/config";
 import { LightboxImage } from "../extract/image-lightbox";
@@ -22,7 +22,7 @@ export default async function SectionsPage({
       <div className="space-y-8">
         {pages.map((page, i) => {
           const sectioning = getPageSectioning(label, page.pageId);
-          const extraction = getTextExtraction(label, page.pageId);
+          const extraction = getTextClassification(label, page.pageId);
           return (
             <section
               key={page.pageId}
@@ -48,7 +48,7 @@ export default async function SectionsPage({
                       {page.imageIds.map((imageId) => (
                         <LightboxImage
                           key={imageId}
-                          src={`/api/books/${label}/pages/${page.pageId}/images/${imageId}`}
+                          src={`/api/books/${label}/pages/${page.pageId}/images/${imageId}?v=${sectioning?.image_classification_version ?? ""}`}
                           alt={imageId}
                           className="rounded border border-border"
                         />

@@ -3,9 +3,9 @@ import path from "node:path";
 import { Observable } from "rxjs";
 import { cachedPromptGenerateObject } from "../cache";
 import {
-  pageTextExtractionSchema,
-  type PageTextExtraction,
-} from "./text-extraction-schema";
+  llmPageTextClassificationSchema,
+  type PageTextClassification,
+} from "./text-classification-schema";
 import { getTextTypes, getTextGroupTypes, getPrunedTextTypes, loadConfig } from "../../config";
 import {
   defineNode,
@@ -21,23 +21,23 @@ import type { BookMetadata } from "../metadata/metadata-schema";
 
 const DEFAULT_CONCURRENCY = 5;
 
-export interface TextExtractionProgress {
+export interface TextClassificationProgress {
   phase: "loading" | "extracting";
   page?: number;
   totalPages?: number;
   label: string;
 }
 
-export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
-  PageTextExtraction[] | TextExtractionProgress
+export const textClassificationNode: Node<PageTextClassification[]> = defineNode<
+  PageTextClassification[] | TextClassificationProgress
 >({
-  name: "text-extraction",
+  name: "text-classification",
   isComplete: (ctx) => {
-    const dir = path.resolve(ctx.outputRoot, ctx.label, "text-extraction");
+    const dir = path.resolve(ctx.outputRoot, ctx.label, "text-classification");
     if (!fs.existsSync(dir)) return null;
     const files = fs.readdirSync(dir).filter((f) => /^pg\d{3}\.json$/.test(f));
     if (files.length === 0) return null;
-    // Check that every extracted page has a corresponding text-extraction result
+    // Check that every extracted page has a corresponding text-classification result
     const pagesDir = path.resolve(ctx.outputRoot, ctx.label, "extract", "pages");
     if (fs.existsSync(pagesDir)) {
       const pageCount = fs.readdirSync(pagesDir).filter((d) => /^pg\d{3}$/.test(d)).length;
@@ -48,7 +48,7 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
     );
   },
   resolve: (ctx) => {
-    return new Observable<PageTextExtraction[] | TextExtractionProgress>(
+    return new Observable<PageTextClassification[] | TextClassificationProgress>(
       (subscriber) => {
         (async () => {
           try {
@@ -60,20 +60,20 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
             ]);
 
             const language = metadata.language_code ?? "en";
-            const textExtractionDir = path.resolve(
+            const textClassificationDir = path.resolve(
               ctx.outputRoot,
               ctx.label,
-              "text-extraction"
+              "text-classification"
             );
-            fs.mkdirSync(textExtractionDir, { recursive: true });
+            fs.mkdirSync(textClassificationDir, { recursive: true });
             const totalPages = allPages.length;
-            const results: (PageTextExtraction | undefined)[] = new Array(
+            const results: (PageTextClassification | undefined)[] = new Array(
               totalPages
             );
             let completed = 0;
 
             const promptName =
-              ctx.config.text_extraction?.prompt ?? "text_extraction";
+              ctx.config.text_classification?.prompt ?? "text_classification";
             const textTypes = Object.entries(getTextTypes()).map(
               ([key, description]) => ({ key, description })
             );
@@ -82,7 +82,7 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
             );
 
             const concurrency =
-              ctx.config.text_extraction?.concurrency ?? DEFAULT_CONCURRENCY;
+              ctx.config.text_classification?.concurrency ?? DEFAULT_CONCURRENCY;
 
             async function processPage(i: number): Promise<void> {
               const p = allPages[i];
@@ -95,9 +95,9 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
               };
 
               const extraction =
-                await cachedPromptGenerateObject<PageTextExtraction>({
-                  model: resolveModel(ctx, ctx.config.text_extraction?.model),
-                  schema: pageTextExtractionSchema,
+                await cachedPromptGenerateObject<PageTextClassification>({
+                  model: resolveModel(ctx, ctx.config.text_classification?.model),
+                  schema: llmPageTextClassificationSchema,
                   promptName,
                   promptContext: {
                     page,
@@ -105,13 +105,16 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
                     text_types: textTypes,
                     text_group_types: textGroupTypes,
                   },
-                  cacheDir: textExtractionDir,
+                  cacheDir: textClassificationDir,
                 });
 
-              // Assign stable group IDs: pg###_gp###
+              // Assign stable group IDs and default is_pruned
               extraction.groups.forEach((g, idx) => {
                 g.group_id =
                   p.pageId + "_gp" + String(idx + 1).padStart(3, "0");
+                for (const t of g.texts) {
+                  t.is_pruned = false;
+                }
               });
 
               // Mark pruned text entries based on config
@@ -128,7 +131,7 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
               }
 
               fs.writeFileSync(
-                path.join(textExtractionDir, `${p.pageId}.json`),
+                path.join(textClassificationDir, `${p.pageId}.json`),
                 JSON.stringify(extraction, null, 2) + "\n"
               );
 
@@ -156,7 +159,7 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
             );
             await Promise.all(workers);
 
-            subscriber.next(results as PageTextExtraction[]);
+            subscriber.next(results as PageTextClassification[]);
             subscriber.complete();
           } catch (err) {
             subscriber.error(err);
@@ -165,12 +168,12 @@ export const textExtractionNode: Node<PageTextExtraction[]> = defineNode<
       }
     );
   },
-}) as Node<PageTextExtraction[]>;
+}) as Node<PageTextClassification[]>;
 
-export function extractText(
+export function classifyText(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
-): Observable<TextExtractionProgress> {
+): Observable<TextClassificationProgress> {
   const config = loadConfig();
   const ctx = createContext(label, {
     config,
@@ -178,11 +181,11 @@ export function extractText(
     provider: options?.provider ?? (config.provider as LLMProvider | undefined),
   });
 
-  return new Observable<TextExtractionProgress>((subscriber) => {
-    textExtractionNode.resolve(ctx).subscribe({
+  return new Observable<TextClassificationProgress>((subscriber) => {
+    textClassificationNode.resolve(ctx).subscribe({
       next(v) {
         if (v && typeof v === "object" && "phase" in v && "label" in v) {
-          subscriber.next(v as unknown as TextExtractionProgress);
+          subscriber.next(v as unknown as TextClassificationProgress);
         }
       },
       error: (err) => subscriber.error(err),

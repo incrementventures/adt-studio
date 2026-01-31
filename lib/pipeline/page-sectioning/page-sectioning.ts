@@ -12,8 +12,10 @@ import {
   type Node,
 } from "../node";
 import { pagesNode } from "../extract/extract";
-import { textExtractionNode } from "../text-extraction/text-extraction";
-import { buildUnprunedGroupSummaries, type PageTextExtraction } from "../text-extraction/text-extraction-schema";
+import { textClassificationNode } from "../text-classification/text-classification";
+import { imageClassificationNode } from "../image-classification/image-classification";
+import { loadUnprunedImagesFromDir } from "../../books";
+import { buildUnprunedGroupSummaries, type PageTextClassification } from "../text-classification/text-classification-schema";
 import { sectionPage } from "./section-page";
 
 export { sectionPage } from "./section-page";
@@ -61,10 +63,12 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
           try {
             subscriber.next({ phase: "loading", label: ctx.label });
 
-            const [allPages, allExtractions] = await Promise.all([
-              resolveNode(pagesNode, ctx),
-              resolveNode(textExtractionNode, ctx),
-            ]);
+            const [allPages, allExtractions, allImageClassifications] =
+              await Promise.all([
+                resolveNode(pagesNode, ctx),
+                resolveNode(textClassificationNode, ctx),
+                resolveNode(imageClassificationNode, ctx),
+              ]);
 
             const sectionTypes = ctx.config.section_types ?? {};
             if (Object.keys(sectionTypes).length === 0) {
@@ -97,32 +101,24 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
 
             async function processPage(i: number): Promise<void> {
               const p = allPages[i];
-              const extraction: PageTextExtraction = allExtractions[i];
+              const extraction: PageTextClassification = allExtractions[i];
 
               // Read page image as base64
               const pageImageBase64 = fs
                 .readFileSync(p.imagePath)
                 .toString("base64");
 
-              // Discover extracted images from extract/pages/pgXXX/images/
+              // Load extracted images, filtering out pruned ones
               const imagesDir = path.join(
                 path.dirname(p.imagePath),
                 "images"
               );
-              const images: { image_id: string; imageBase64: string }[] = [];
-              if (fs.existsSync(imagesDir)) {
-                const imageFiles = fs
-                  .readdirSync(imagesDir)
-                  .filter((f) => /\.png$/i.test(f))
-                  .sort();
-                for (const imgFile of imageFiles) {
-                  const imageId = imgFile.replace(/\.png$/i, "");
-                  const imgBase64 = fs
-                    .readFileSync(path.join(imagesDir, imgFile))
-                    .toString("base64");
-                  images.push({ image_id: imageId, imageBase64: imgBase64 });
-                }
-              }
+              const bookDir = path.resolve(ctx.outputRoot, ctx.label);
+              const images = loadUnprunedImagesFromDir(
+                bookDir,
+                imagesDir,
+                allImageClassifications[i],
+              );
 
               // Build group summaries, excluding pruned text entries
               const groups = buildUnprunedGroupSummaries(extraction, p.pageId);
@@ -136,6 +132,10 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
                 promptName,
                 cacheDir: sectioningDir,
               });
+
+              // Record which classification versions were used (always 1 for fresh pipeline runs)
+              sectioning.text_classification_version = 1;
+              sectioning.image_classification_version = 1;
 
               fs.writeFileSync(
                 path.join(sectioningDir, `${p.pageId}.json`),

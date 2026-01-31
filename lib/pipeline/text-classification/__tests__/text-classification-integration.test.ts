@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { lastValueFrom, toArray } from "rxjs";
-import { extractText } from "../text-extraction";
-import { pageTextExtractionSchema } from "../text-extraction-schema";
+import { classifyText } from "../text-classification";
+import { pageTextClassificationSchema } from "../text-classification-schema";
 
 const booksRoot = path.resolve("fixtures");
 const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");
@@ -11,21 +11,21 @@ const hasPagesOnDisk = fs.existsSync(ravenPagesDir);
 
 if (!hasPagesOnDisk) {
   console.warn(
-    `Skipping text-extraction integration tests: ${ravenPagesDir} not found`
+    `Skipping text-classification integration tests: ${ravenPagesDir} not found`
   );
 }
 
-describe("text-extraction integration", () => {
+describe("text-classification integration", () => {
   it.skipIf(!hasPagesOnDisk)(
-    "extracts text groups for raven and validates against schema",
+    "classifies text groups for raven and validates against schema",
     { timeout: 120_000 },
     async () => {
-      const textExtractionDir = path.join(booksRoot, "raven", "text-extraction");
+      const textClassificationDir = path.join(booksRoot, "raven", "text-classification");
       const alreadyComplete =
-        fs.existsSync(textExtractionDir) &&
-        fs.readdirSync(textExtractionDir).some((f) => /^pg\d{3}\.json$/.test(f));
+        fs.existsSync(textClassificationDir) &&
+        fs.readdirSync(textClassificationDir).some((f) => /^pg\d{3}\.json$/.test(f));
 
-      const progress$ = extractText("raven", { outputRoot: booksRoot });
+      const progress$ = classifyText("raven", { outputRoot: booksRoot });
       const events = await lastValueFrom(progress$.pipe(toArray()));
 
       if (alreadyComplete) {
@@ -44,9 +44,9 @@ describe("text-extraction integration", () => {
       expect(pageDirs.length).toBeGreaterThan(0);
 
       function readPage(dir: string) {
-        const filePath = path.join(textExtractionDir, `${dir}.json`);
+        const filePath = path.join(textClassificationDir, `${dir}.json`);
         expect(fs.existsSync(filePath)).toBe(true);
-        return pageTextExtractionSchema.parse(
+        return pageTextClassificationSchema.parse(
           JSON.parse(fs.readFileSync(filePath, "utf-8"))
         );
       }
@@ -78,7 +78,7 @@ describe("text-extraction integration", () => {
   it.skipIf(!hasPagesOnDisk)(
     "cached result matches schema",
     async () => {
-      const cacheDir = path.join(booksRoot, "raven", "text-extraction", ".cache");
+      const cacheDir = path.join(booksRoot, "raven", "text-classification", ".cache");
       if (!fs.existsSync(cacheDir)) {
         console.warn("No cache directory found — skipping cache validation");
         return;
@@ -89,14 +89,14 @@ describe("text-extraction integration", () => {
         .filter((f) => f.endsWith(".json"));
       expect(cacheFiles.length).toBeGreaterThan(0);
 
-      // Validate at least one cache file parses as text extraction
+      // Validate at least one cache file parses as text classification
       // (cache may also contain metadata entries, so we only check parseable ones)
       let parsed = 0;
       for (const file of cacheFiles) {
         const raw = JSON.parse(
           fs.readFileSync(path.join(cacheDir, file), "utf-8")
         );
-        const result = pageTextExtractionSchema.safeParse(raw);
+        const result = pageTextClassificationSchema.safeParse(raw);
         if (result.success) parsed++;
       }
       expect(parsed).toBeGreaterThan(0);

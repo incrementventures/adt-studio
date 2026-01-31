@@ -28,7 +28,17 @@ export async function sectionPage(options: {
       "No section_types provided — cannot run page sectioning"
     );
   }
-  const schema = buildPageSectioningSchema(sectionTypeKeys);
+  const validPartIds = [
+    ...options.groups.map((g) => g.group_id),
+    ...options.images.map((img) => img.image_id),
+  ];
+  if (validPartIds.length === 0) {
+    return { reasoning: "", sections: [] };
+  }
+  const schema = buildPageSectioningSchema(
+    sectionTypeKeys,
+    validPartIds as [string, ...string[]]
+  );
 
   return cachedPromptGenerateObject<PageSectioning>({
     model: options.model,

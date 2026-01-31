@@ -14,8 +14,11 @@ describe("resolveBookPaths", () => {
     expect(paths.metadataFile).toBe(
       path.join(bookDir, "metadata", "metadata.json")
     );
-    expect(paths.textExtractionDir).toBe(
-      path.join(bookDir, "text-extraction")
+    expect(paths.textClassificationDir).toBe(
+      path.join(bookDir, "text-classification")
+    );
+    expect(paths.imageClassificationDir).toBe(
+      path.join(bookDir, "image-classification")
     );
   });
 
