@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
 import type { PageSectioning } from "./page-sectioning-schema";
-import { loadConfig } from "../../config";
+import { loadConfig, getPrunedSectionTypes } from "../../config";
 import {
   defineNode,
   createContext,
@@ -132,6 +132,13 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
                 promptName,
                 cacheDir: sectioningDir,
               });
+
+              // Mark pruned sections
+              const prunedSectionTypes = getPrunedSectionTypes();
+              const prunedSet = new Set(prunedSectionTypes);
+              for (const s of sectioning.sections) {
+                s.is_pruned = prunedSet.has(s.section_type);
+              }
 
               // Record which classification versions were used (always 1 for fresh pipeline runs)
               sectioning.text_classification_version = 1;

@@ -255,7 +255,7 @@ export function ImageClassificationPanel({
   return (
     <div>
       <div className="flex items-center gap-2 bg-amber-600 px-4 py-2 text-sm font-semibold text-white">
-        <span>Image Classification</span>
+        <span>Images</span>
         {error && (
           <span className="text-xs font-normal text-red-200">{error}</span>
         )}

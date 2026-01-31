@@ -138,7 +138,7 @@ export function SectionsPanel({
             return (
               <div
                 key={si}
-                className="rounded-lg border border-border bg-surface/30"
+                className={`rounded-lg border border-border bg-surface/30${section.is_pruned ? " opacity-40" : ""}`}
               >
                 {/* Section header */}
                 <div className="flex items-center gap-2 px-4 py-2.5">

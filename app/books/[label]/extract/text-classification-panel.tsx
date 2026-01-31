@@ -112,7 +112,7 @@ export function TextClassificationPanel({
     return (
       <div>
         <div className="flex items-center gap-2 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">
-          <span>Text Classification</span>
+          <span>Text</span>
           {rerunError && (
             <span className="text-xs font-normal text-red-200">{rerunError}</span>
           )}
@@ -209,7 +209,7 @@ export function TextClassificationPanel({
   return (
     <div>
       <div className="flex items-center gap-2 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">
-        <span>Text Classification</span>
+        <span>Text</span>
         {rerunError && (
           <span className="text-xs font-normal text-red-200">{rerunError}</span>
         )}

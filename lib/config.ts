@@ -25,6 +25,7 @@ const configSchema = z.object({
   end_page: z.number().int().min(1).optional(),
   section_types: z.record(z.string(), z.string()).optional(),
   pruned_text_types: z.array(z.string()).optional(),
+  pruned_section_types: z.array(z.string()).optional(),
   page_sectioning: z
     .object({
       prompt: z.string().optional(),
@@ -82,6 +83,10 @@ export const groupTypeKeys = Object.keys(
 
 export function getPrunedTextTypes(): string[] {
   return config.pruned_text_types ?? [];
+}
+
+export function getPrunedSectionTypes(): string[] {
+  return config.pruned_section_types ?? [];
 }
 
 export function getImageFilters(): {

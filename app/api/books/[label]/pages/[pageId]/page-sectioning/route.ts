@@ -8,7 +8,7 @@ import {
   loadUnprunedImages,
   resolvePageImagePath,
 } from "@/lib/books";
-import { loadConfig } from "@/lib/config";
+import { loadConfig, getPrunedSectionTypes } from "@/lib/config";
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import { createContext, resolveModel } from "@/lib/pipeline/node";
 import type { LLMProvider } from "@/lib/pipeline/node";
@@ -91,6 +91,13 @@ export async function POST(
     promptName,
     cacheDir: sectioningDir,
   });
+
+  // Mark pruned sections
+  const prunedSectionTypes = getPrunedSectionTypes();
+  const prunedSet = new Set(prunedSectionTypes);
+  for (const s of sectioning.sections) {
+    s.is_pruned = prunedSet.has(s.section_type);
+  }
 
   // Record which classification versions were used
   const imageClassResult = getImageClassification(label, pageId);

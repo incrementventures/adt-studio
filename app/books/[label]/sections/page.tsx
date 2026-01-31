@@ -35,7 +35,6 @@ export default async function SectionsPage({
               >
                 Page {i + 1}
               </Link>
-
               <div className="grid gap-6 p-4 lg:grid-cols-[280px_1fr]">
                 <div className="space-y-3">
                   <LightboxImage

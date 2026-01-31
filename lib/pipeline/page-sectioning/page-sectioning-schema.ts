@@ -29,6 +29,7 @@ export type PageSectioning = {
     background_color: string;
     text_color: string;
     page_number: number | null;
+    is_pruned: boolean;
   }>;
   text_classification_version?: number;
   image_classification_version?: number;

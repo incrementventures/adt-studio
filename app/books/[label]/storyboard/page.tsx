@@ -23,7 +23,7 @@ export default async function StoryboardPage({
 
   return (
     <div>
-      <div className="space-y-8">
+      <div>
         {pages.map((page, i) => {
           const extraction = getTextClassification(label, page.pageId);
           const availableVersions = listTextClassificationVersions(label, page.pageId);
@@ -34,15 +34,18 @@ export default async function StoryboardPage({
             <section
               key={page.pageId}
               id={page.pageId}
-              className="scroll-mt-16 overflow-hidden rounded-lg border border-border"
+              className="scroll-mt-16"
             >
               <Link
                 href={`/books/${label}/pages/${page.pageId}`}
-                className="block bg-slate-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-500 transition-colors"
+                className="flex items-center gap-3 py-4 text-faint hover:text-foreground transition-colors"
               >
-                Page {i + 1}
+                <div className="h-0.5 flex-1 bg-border" />
+                <span className="shrink-0 text-sm font-bold uppercase tracking-wider">page {i + 1}</span>
+                <div className="h-0.5 flex-1 bg-border" />
               </Link>
 
+              <div className="overflow-hidden rounded-lg border border-border">
               {/* Image Classification */}
               <ImageClassificationPanel
                 label={label}
@@ -74,6 +77,7 @@ export default async function StoryboardPage({
                 imageIds={page.imageIds}
                 sectionTypes={sectionTypes}
               />
+              </div>
             </section>
           );
         })}

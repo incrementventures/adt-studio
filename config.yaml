@@ -74,3 +74,8 @@ pruned_text_types:
   - header_text
   - footer_text
   - page_number
+
+pruned_section_types:
+  - back_cover
+  - credits
+  - inside_cover
