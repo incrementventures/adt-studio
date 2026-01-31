@@ -65,6 +65,11 @@ image_classification:
   model: openai:gpt-5.2
   concurrency: 5
 
+web_rendering:
+  prompt: web_generation_html
+  model: openai:gpt-5.2
+  concurrency: 5
+
 image_filters:
   size:
     min_side: 100

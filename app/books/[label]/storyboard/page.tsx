@@ -6,11 +6,13 @@ import {
   getPageSectioning,
   getImageClassification,
   listImageClassificationVersions,
+  getWebRendering,
 } from "@/lib/books";
 import { textTypeKeys, groupTypeKeys, getSectionTypes } from "@/lib/config";
 import { TextClassificationPanel } from "../extract/text-classification-panel";
 import { ImageClassificationPanel } from "../extract/image-classification-panel";
 import { SectionsPanel } from "../sections/sections-panel";
+import { WebRenderingPanel } from "./web-rendering-panel";
 
 export default async function StoryboardPage({
   params,
@@ -28,6 +30,7 @@ export default async function StoryboardPage({
           const extraction = getTextClassification(label, page.pageId);
           const availableVersions = listTextClassificationVersions(label, page.pageId);
           const sectioning = getPageSectioning(label, page.pageId);
+          const webRenderingResult = getWebRendering(label, page.pageId);
           const imageClassificationResult = getImageClassification(label, page.pageId);
           const imageClassificationVersions = listImageClassificationVersions(label, page.pageId);
           return (
@@ -76,6 +79,13 @@ export default async function StoryboardPage({
                 extraction={extraction?.data ?? null}
                 imageIds={page.imageIds}
                 sectionTypes={sectionTypes}
+              />
+
+              {/* Web Pages */}
+              <WebRenderingPanel
+                label={label}
+                pageId={page.pageId}
+                sections={webRenderingResult?.sections ?? null}
               />
               </div>
             </section>

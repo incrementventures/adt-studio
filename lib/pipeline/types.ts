@@ -9,6 +9,7 @@ export interface BookPaths {
   textClassificationDir: string;
   imageClassificationDir: string;
   pageSectioningDir: string;
+  webRenderingDir: string;
 }
 
 export function resolveBookPaths(
@@ -23,6 +24,7 @@ export function resolveBookPaths(
   const textClassificationDir = path.join(bookDir, "text-classification");
   const imageClassificationDir = path.join(bookDir, "image-classification");
   const pageSectioningDir = path.join(bookDir, "page-sectioning");
+  const webRenderingDir = path.join(bookDir, "web-rendering");
   return {
     bookDir,
     extractDir,
@@ -32,6 +34,7 @@ export function resolveBookPaths(
     textClassificationDir,
     imageClassificationDir,
     pageSectioningDir,
+    webRenderingDir,
   };
 }
 

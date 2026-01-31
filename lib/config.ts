@@ -40,6 +40,13 @@ const configSchema = z.object({
       concurrency: z.number().int().min(1).optional(),
     })
     .optional(),
+  web_rendering: z
+    .object({
+      prompt: z.string().optional(),
+      model: z.string().optional(),
+      concurrency: z.number().int().min(1).optional(),
+    })
+    .optional(),
   image_filters: z
     .object({
       size: z

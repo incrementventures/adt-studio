@@ -4,6 +4,7 @@ import { resolveBookPaths } from "./pipeline/types";
 import { bookMetadataSchema, type BookMetadata } from "./pipeline/metadata/metadata-schema";
 import type { PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 import type { PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
+import type { SectionRendering, WebRendering } from "./pipeline/web-rendering/web-rendering-schema";
 
 interface TextEntry {
   text_type: string;
@@ -397,6 +398,104 @@ export function getPageSectioning(
 
 export { type PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 export { type PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
+export { type SectionRendering, type WebRendering } from "./pipeline/web-rendering/web-rendering-schema";
+
+export function listWebRenderingVersions(
+  label: string,
+  sectionId: string
+): number[] {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const dir = paths.webRenderingDir;
+  const baseFile = path.join(dir, `${sectionId}.json`);
+  if (!fs.existsSync(baseFile)) return [];
+
+  const versions = [1];
+  const versionRe = new RegExp(`^${sectionId}\\.v(\\d{3})\\.json$`);
+  for (const f of fs.readdirSync(dir)) {
+    const m = versionRe.exec(f);
+    if (m) versions.push(parseInt(m[1], 10));
+  }
+  return [...new Set(versions)].sort((a, b) => a - b);
+}
+
+export function getWebRenderingVersion(
+  label: string,
+  sectionId: string,
+  version: number
+): SectionRendering | null {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const dir = paths.webRenderingDir;
+  const filePath =
+    version === 1
+      ? path.join(dir, `${sectionId}.json`)
+      : path.join(dir, `${sectionId}.v${String(version).padStart(3, "0")}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as SectionRendering;
+}
+
+export function getCurrentWebRenderingVersion(
+  label: string,
+  sectionId: string
+): number {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const currentFile = path.join(paths.webRenderingDir, `${sectionId}.current`);
+  if (fs.existsSync(currentFile)) {
+    const content = fs.readFileSync(currentFile, "utf-8").trim();
+    const v = parseInt(content, 10);
+    if (!isNaN(v)) return v;
+  }
+  const versions = listWebRenderingVersions(label, sectionId);
+  return versions.length > 0 ? versions[versions.length - 1] : 1;
+}
+
+export function setCurrentWebRenderingVersion(
+  label: string,
+  sectionId: string,
+  version: number
+): void {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  fs.writeFileSync(
+    path.join(paths.webRenderingDir, `${sectionId}.current`),
+    String(version),
+    "utf-8"
+  );
+}
+
+export type EnrichedSectionRendering = SectionRendering & {
+  version: number;
+  versions: number[];
+};
+
+export function getWebRendering(
+  label: string,
+  pageId: string
+): { sections: EnrichedSectionRendering[] } | null {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const dir = paths.webRenderingDir;
+  if (!fs.existsSync(dir)) return null;
+
+  // Scan for base files matching {pageId}_s*.json (not versioned)
+  const sectionRe = new RegExp(`^${pageId}_s(\\d{3})\\.json$`);
+  const sectionIds: string[] = [];
+  for (const f of fs.readdirSync(dir)) {
+    const m = sectionRe.exec(f);
+    if (m) sectionIds.push(`${pageId}_s${m[1]}`);
+  }
+  if (sectionIds.length === 0) return null;
+
+  sectionIds.sort();
+
+  const sections: EnrichedSectionRendering[] = [];
+  for (const sectionId of sectionIds) {
+    const versions = listWebRenderingVersions(label, sectionId);
+    const current = getCurrentWebRenderingVersion(label, sectionId);
+    const data = getWebRenderingVersion(label, sectionId, current);
+    if (!data) continue;
+    sections.push({ ...data, version: current, versions });
+  }
+
+  return sections.length > 0 ? { sections } : null;
+}
 
 function countPages(pagesDir: string): number {
   if (!fs.existsSync(pagesDir)) return 0;

@@ -1,0 +1,31 @@
+{% chat role: "system" %}
+You are an expert frontend engineer. You will be given an existing HTML section from a web page along with an annotated screenshot showing rectangular boxes drawn by a user. Each box contains a text instruction describing what should be changed in that region.
+
+Your task is to modify the existing HTML to incorporate the user's requested changes. Follow these rules:
+
+1. Only modify what the annotations ask for. Do not change unrelated parts of the HTML.
+2. Maintain the existing structure, classes, data attributes, and Tailwind CSS styling unless the annotation specifically asks to change them.
+3. Keep all existing `data-id` attributes intact.
+4. Keep the single `<section />` wrapper and `<div id="content" class="container">` structure.
+5. Do not add or remove `<img>` tags unless explicitly requested.
+6. The HTML uses Tailwind CSS via CDN — continue using Tailwind classes for any style changes.
+
+Provide your answer in the given structure with `reasoning` explaining what you changed and `content` containing the full updated HTML.
+{% endchat %}
+
+{% chat role: "user" %}
+Here is the annotated screenshot showing the boxes and instructions drawn on top of the rendered section:
+{% image annotation_image_base64 %}
+
+The annotations in structured form (coordinates normalized 0-1 relative to the section dimensions):
+{% for annotation in annotations %}
+- Box {{ forloop.index }}: x={{ annotation.x }}, y={{ annotation.y }}, width={{ annotation.width }}, height={{ annotation.height }} — "{{ annotation.text }}"
+{% endfor %}
+
+Here is the current HTML for this section:
+```html
+{{ current_html }}
+```
+
+Please modify the HTML according to the annotations and return the updated version.
+{% endchat %}
