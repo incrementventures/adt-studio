@@ -1,3 +1,5 @@
+[![Tests](https://github.com/incrementventures/adt-studio/actions/workflows/test.yml/badge.svg)](https://github.com/incrementventures/adt-studio/actions/workflows/test.yml)
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
