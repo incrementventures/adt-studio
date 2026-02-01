@@ -127,6 +127,7 @@ export async function POST(
       images,
       promptName,
       cacheDir: renderingDir,
+      maxRetries: config.web_rendering?.max_retries ?? 2,
     });
 
     sectionRenderings.push(rendering);

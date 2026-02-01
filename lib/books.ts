@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveBookPaths } from "./pipeline/types";
 import { bookMetadataSchema, type BookMetadata } from "./pipeline/metadata/metadata-schema";
+import type { PdfMetadata } from "./pipeline/extract/extract";
 import type { PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 import type { PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
 import type { SectionRendering, WebRendering } from "./pipeline/web-rendering/web-rendering-schema";
@@ -44,7 +45,7 @@ export function listBooks(): BookSummary[] {
     if (!entry.isDirectory()) continue;
     const label = entry.name;
     const paths = resolveBookPaths(label, root);
-    if (!fs.existsSync(paths.metadataFile)) continue;
+    if (!fs.existsSync(paths.metadataFile) && !fs.existsSync(paths.stubMetadataFile)) continue;
 
     const metadata = getBookMetadata(label);
     if (!metadata) continue;
@@ -58,11 +59,25 @@ export function listBooks(): BookSummary[] {
 
 export function getBookMetadata(label: string): BookMetadata | null {
   const paths = resolveBookPaths(label, getBooksRoot());
-  if (!fs.existsSync(paths.metadataFile)) return null;
 
-  const raw = JSON.parse(fs.readFileSync(paths.metadataFile, "utf-8"));
+  // Prefer metadata node output, fall back to extract stub
+  const file = fs.existsSync(paths.metadataFile)
+    ? paths.metadataFile
+    : fs.existsSync(paths.stubMetadataFile)
+      ? paths.stubMetadataFile
+      : null;
+  if (!file) return null;
+
+  const raw = JSON.parse(fs.readFileSync(file, "utf-8"));
   const result = bookMetadataSchema.safeParse(raw);
   return result.success ? result.data : null;
+}
+
+export function getPdfMetadata(label: string): PdfMetadata | null {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const file = path.join(paths.extractDir, "metadata.json");
+  if (!fs.existsSync(file)) return null;
+  return JSON.parse(fs.readFileSync(file, "utf-8")) as PdfMetadata;
 }
 
 export interface PageSummary {

@@ -4,6 +4,7 @@ import {
   webRenderingResponseSchema,
   type SectionRendering,
 } from "./web-rendering-schema";
+import { validateSectionHtml } from "./validate-html";
 
 export interface RenderSectionText {
   text_id: string;
@@ -20,6 +21,8 @@ export interface RenderSectionImage {
  * Pure function: runs the web rendering LLM call for a single section.
  * No disk reads or writes — the caller is responsible for loading inputs
  * and persisting the result.
+ *
+ * Validates the generated HTML via the cache layer's retry mechanism.
  */
 export async function renderSection(options: {
   model: LanguageModel;
@@ -30,7 +33,11 @@ export async function renderSection(options: {
   images: RenderSectionImage[];
   promptName: string;
   cacheDir: string;
+  maxRetries?: number;
 }): Promise<SectionRendering> {
+  const allowedTextIds = options.texts.map((t) => t.text_id);
+  const allowedImageIds = options.images.map((img) => img.image_id);
+
   const response = await cachedPromptGenerateObject<{
     reasoning: string;
     content: string;
@@ -45,6 +52,9 @@ export async function renderSection(options: {
       images: options.images,
     },
     cacheDir: options.cacheDir,
+    validate: (result) =>
+      validateSectionHtml(result.content, allowedTextIds, allowedImageIds),
+    maxRetries: options.maxRetries ?? 2,
   });
 
   return {

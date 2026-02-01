@@ -45,6 +45,7 @@ const configSchema = z.object({
       prompt: z.string().optional(),
       model: z.string().optional(),
       concurrency: z.number().int().min(1).optional(),
+      max_retries: z.number().int().min(0).optional(),
     })
     .optional(),
   image_filters: z

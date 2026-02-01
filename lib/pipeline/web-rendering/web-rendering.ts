@@ -164,6 +164,7 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
                   images,
                   promptName,
                   cacheDir: renderingDir,
+                  maxRetries: ctx.config.web_rendering?.max_retries ?? 2,
                 });
 
                 sectionRenderings.push(rendering);

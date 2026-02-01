@@ -4,8 +4,11 @@ import path from "node:path";
 import {
   getBooksRoot,
   getCurrentWebRenderingVersion,
+  getTextClassification,
+  getPageSectioning,
   getWebRenderingVersion,
   listWebRenderingVersions,
+  loadUnprunedImages,
   setCurrentWebRenderingVersion,
 } from "@/lib/books";
 import { loadConfig } from "@/lib/config";
@@ -13,6 +16,7 @@ import { resolveBookPaths } from "@/lib/pipeline/types";
 import { createContext, resolveModel } from "@/lib/pipeline/node";
 import type { LLMProvider } from "@/lib/pipeline/node";
 import { editSection, type Annotation } from "@/lib/pipeline/web-rendering/edit-section";
+import type { RenderSectionText } from "@/lib/pipeline/web-rendering/render-section";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
@@ -81,12 +85,61 @@ export async function POST(
   });
   const model = resolveModel(ctx, config.web_rendering?.model);
 
+  // Derive allowed text/image IDs for this section
+  let allowedTextIds: string[] | undefined;
+  let allowedImageIds: string[] | undefined;
+  const extractionResult = getTextClassification(label, pageId);
+  const sectioning = getPageSectioning(label, pageId);
+  if (extractionResult && sectioning) {
+    const extraction = extractionResult.data;
+    const section = sectioning.sections[sectionIndex];
+    if (section) {
+      const textLookup = new Map<string, RenderSectionText[]>();
+      extraction.groups.forEach((g, idx) => {
+        const groupId =
+          g.group_id ?? pageId + "_gp" + String(idx + 1).padStart(3, "0");
+        const texts: RenderSectionText[] = [];
+        g.texts.forEach((t, ti) => {
+          if (t.is_pruned) return;
+          texts.push({
+            text_id: groupId + "_t" + String(ti + 1).padStart(3, "0"),
+            text_type: t.text_type,
+            text: t.text,
+          });
+        });
+        if (texts.length > 0) {
+          textLookup.set(groupId, texts);
+        }
+      });
+
+      const allImages = loadUnprunedImages(label, pageId);
+      const imageIdSet = new Set(allImages.map((img) => img.image_id));
+
+      const textIds: string[] = [];
+      const imageIds: string[] = [];
+      for (const partId of section.part_ids) {
+        const groupTexts = textLookup.get(partId);
+        if (groupTexts) {
+          textIds.push(...groupTexts.map((t) => t.text_id));
+        }
+        if (imageIdSet.has(partId)) {
+          imageIds.push(partId);
+        }
+      }
+      allowedTextIds = textIds;
+      allowedImageIds = imageIds;
+    }
+  }
+
   const result = await editSection({
     model,
     currentHtml,
     annotationImageBase64,
     annotations,
     cacheDir: renderingDir,
+    allowedTextIds,
+    allowedImageIds,
+    maxRetries: config.web_rendering?.max_retries ?? 2,
   });
 
   // Build updated section

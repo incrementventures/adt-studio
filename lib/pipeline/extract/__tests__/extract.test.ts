@@ -56,6 +56,14 @@ describe("extract", () => {
     const imgPng = fs.readFileSync(path.join(imagesDir, images[0]));
     expect(imgPng[0]).toBe(0x89);
     expect(imgPng[1]).toBe(0x50);
+
+    // PDF metadata should be extracted
+    const metadataPath = path.join(tmpDir, "raven", "extract", "metadata.json");
+    expect(fs.existsSync(metadataPath)).toBe(true);
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
+    expect(metadata).toBeTypeOf("object");
+    expect(metadata.format).toMatch(/^PDF \d/);
+    expect(metadata.title).toBe("Hyena and Raven");
   });
 
   it("extracts images nested inside Form XObjects (page range)", async () => {
