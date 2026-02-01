@@ -186,6 +186,12 @@ export default function MetadataPanel({
               Extracted Metadata
             </h3>
             <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+              {metadata.title && (
+                <div>
+                  <dt className="text-muted">Title</dt>
+                  <dd>{metadata.title}</dd>
+                </div>
+              )}
               {metadata.authors.length > 0 && (
                 <div>
                   <dt className="text-muted">Authors</dt>
