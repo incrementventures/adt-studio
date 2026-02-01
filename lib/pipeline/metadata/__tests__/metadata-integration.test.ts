@@ -4,8 +4,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { lastValueFrom, toArray } from "rxjs";
 import { extractMetadata } from "../metadata";
 import { bookMetadataSchema } from "../metadata-schema";
-import { closeAllDbs, getDb } from "@/lib/db";
-import { putBookMetadata } from "@/lib/books";
+import { closeAllDbs } from "@/lib/db";
 
 const booksRoot = path.resolve("fixtures");
 const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");
@@ -23,43 +22,24 @@ describe("metadata integration", () => {
   beforeAll(() => {
     prevBooksRoot = process.env.BOOKS_ROOT;
     process.env.BOOKS_ROOT = booksRoot;
-
-    // Seed the DB with the fixture metadata so isComplete() returns
-    // immediately and the pipeline doesn't try to call the LLM.
-    const metadataPath = path.join(booksRoot, "raven", "metadata", "metadata.json");
-    if (fs.existsSync(metadataPath)) {
-      const raw = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
-      const result = bookMetadataSchema.safeParse(raw);
-      if (result.success) {
-        putBookMetadata("raven", "llm", result.data);
-      }
-    }
   });
 
   afterAll(() => {
     closeAllDbs();
     if (prevBooksRoot === undefined) delete process.env.BOOKS_ROOT;
     else process.env.BOOKS_ROOT = prevBooksRoot;
-    // Clean up DB created during test
-    const dbPath = path.join(booksRoot, "raven", "raven.db");
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
-    const walPath = dbPath + "-wal";
-    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
-    const shmPath = dbPath + "-shm";
-    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
   });
 
   it.skipIf(!hasPagesOnDisk)(
     "extracts metadata for raven and validates against schema",
     { timeout: 120_000 },
     async () => {
-      const metadataPath = path.join(booksRoot, "raven", "metadata", "metadata.json");
-
-      // With the DB seeded, isComplete returns immediately — no LLM call
+      // DB already has LLM metadata — isComplete returns immediately
       const progress$ = extractMetadata("raven", { outputRoot: booksRoot });
       const events = await lastValueFrom(progress$.pipe(toArray()));
       expect(events).toEqual([]);
 
+      const metadataPath = path.join(booksRoot, "raven", "metadata", "metadata.json");
       const raw = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
       const metadata = bookMetadataSchema.parse(raw);
 

@@ -29,6 +29,10 @@ adt-press
 .DS_Store
 *.pem
 
+# SQLite WAL/SHM files (transient, never commit)
+*-wal
+*-shm
+
 # debug
 npm-debug.log*
 yarn-debug.log*

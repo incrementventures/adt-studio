@@ -28,13 +28,6 @@ describe("text-classification integration", () => {
     closeAllDbs();
     if (prevBooksRoot === undefined) delete process.env.BOOKS_ROOT;
     else process.env.BOOKS_ROOT = prevBooksRoot;
-    // Clean up DB created during test
-    const dbPath = path.join(booksRoot, "raven", "raven.db");
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
-    const walPath = dbPath + "-wal";
-    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
-    const shmPath = dbPath + "-shm";
-    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
   });
 
   it.skipIf(!hasPagesOnDisk)(
