@@ -13,11 +13,11 @@ import {
   type Node,
 } from "../node";
 import { pagesNode, type Page } from "../extract/extract";
-import { loadConfig } from "../../config";
+import { loadBookConfig } from "../../config";
 
 export type { LLMProvider } from "../node";
 
-const MAX_PAGES = 15;
+const MAX_PAGES = 3;
 
 export interface MetadataProgress {
   phase: "loading" | "calling-llm" | "done";
@@ -90,7 +90,7 @@ export function extractMetadata(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<MetadataProgress> {
-  const config = loadConfig();
+  const config = loadBookConfig(label);
   const ctx = createContext(label, {
     config,
     outputRoot: options?.outputRoot,

@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
+import type { z } from "zod/v4";
 import { cachedPromptGenerateObject } from "@/lib/pipeline/cache";
 import {
-  llmPageTextClassificationSchema,
   type PageTextClassification,
 } from "./text-classification-schema";
 
@@ -12,6 +12,7 @@ import {
  */
 export async function classifyPage(options: {
   model: LanguageModel;
+  schema: z.ZodType;
   pageNumber: number;
   pageId: string;
   text: string;
@@ -31,7 +32,7 @@ export async function classifyPage(options: {
 
   const extraction = await cachedPromptGenerateObject<PageTextClassification>({
     model: options.model,
-    schema: llmPageTextClassificationSchema,
+    schema: options.schema,
     promptName: options.promptName,
     promptContext: {
       page,

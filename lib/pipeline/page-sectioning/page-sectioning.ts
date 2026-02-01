@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
 import type { PageSectioning } from "./page-sectioning-schema";
-import { loadConfig, getPrunedSectionTypes } from "../../config";
+import { loadBookConfig, getPrunedSectionTypes } from "../../config";
 import {
   defineNode,
   createContext,
@@ -134,7 +134,7 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
               });
 
               // Mark pruned sections
-              const prunedSectionTypes = getPrunedSectionTypes();
+              const prunedSectionTypes = getPrunedSectionTypes(ctx.config);
               const prunedSet = new Set(prunedSectionTypes);
               for (const s of sectioning.sections) {
                 s.is_pruned = prunedSet.has(s.section_type);
@@ -188,7 +188,7 @@ export function sectionPages(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<PageSectioningProgress> {
-  const config = loadConfig();
+  const config = loadBookConfig(label);
   const ctx = createContext(label, {
     config,
     outputRoot: options?.outputRoot,

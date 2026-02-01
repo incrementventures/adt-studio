@@ -7,7 +7,6 @@ Your task is to:
 3. Extract the author name(s) as a list
 4. Extract the publisher name
 5. Extract the language of the book
-6. Extract the table of contents (if present)
 
 IMPORTANT NOTES:
 * The cover is typically the first page, but may be the second if the first is blank or contains only publisher information
@@ -15,14 +14,6 @@ IMPORTANT NOTES:
 * Some books may not have a clear cover image or may be missing author/publisher information
 * If you cannot find information with confidence, return null for that field or an empty list for authors
 * Provide reasoning for your decisions
-
-TABLE OF CONTENTS EXTRACTION:
-* Only extract the table of contents if you see a CLEAR, explicit table of contents section
-* The TOC typically appears in the first few pages after the title/copyright pages
-* Extract chapter titles and their corresponding page numbers
-* Page numbers should be integers (convert Roman numerals like "i, ii, iii" to numbers if needed)
-* If there is no clear table of contents, return null for the table_of_contents field
-* Do not guess or infer chapters that aren't explicitly listed in a TOC
 
 LANGUAGE DETECTION:
 * Analyze the primary narrative text to determine the book's language
@@ -42,5 +33,5 @@ Extracted text: {{ page.text }}
 {% image page.imageBase64 %}
 
 {% endfor %}
-Provide your reasoning and then the extracted metadata including the table of contents if present.
+Provide your reasoning and then the extracted metadata.
 {% endchat %}

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
 import type { WebRendering } from "./web-rendering-schema";
-import { loadConfig } from "../../config";
+import { loadBookConfig } from "../../config";
 import {
   defineNode,
   createContext,
@@ -219,7 +219,7 @@ export function renderWebPages(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<WebRenderingProgress> {
-  const config = loadConfig();
+  const config = loadBookConfig(label);
   const ctx = createContext(label, {
     config,
     outputRoot: options?.outputRoot,

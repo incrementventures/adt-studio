@@ -104,7 +104,6 @@ Sends the first pages of an extracted book to an LLM and writes structured metad
 - `publisher` — publisher name (string | null)
 - `language_code` — ISO 639-1 code (string | null)
 - `cover_page_number` — page number of the front cover (int | null)
-- `table_of_contents` — list of `{ title, page_number }` entries (array | null)
 - `reasoning` — explanation of extraction decisions
 
 **CLI:** `pnpm pipeline metadata <label> [--provider openai|anthropic|google]`

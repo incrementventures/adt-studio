@@ -40,10 +40,10 @@ export default function RootLayout({
               </span>
               ADT Studio
             </Link>
-            <QueueStatus />
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+        <QueueStatus />
       </body>
     </html>
   );

@@ -218,24 +218,6 @@ export default function MetadataPanel({
                 </div>
               )}
             </dl>
-            {metadata.table_of_contents &&
-              metadata.table_of_contents.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium text-muted">
-                    Table of Contents
-                  </h4>
-                  <ul className="mt-1 text-sm">
-                    {metadata.table_of_contents.map((entry, i) => (
-                      <li key={i} className="flex justify-between py-0.5">
-                        <span>{entry.title}</span>
-                        <span className="text-faint">
-                          p. {entry.page_number}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
           </div>
         )}
       </div>

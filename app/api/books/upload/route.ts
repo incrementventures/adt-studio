@@ -75,7 +75,6 @@ export async function POST(request: Request) {
               publisher: null,
               language_code: null,
               cover_page_number: 1,
-              table_of_contents: null,
               reasoning: "Auto-generated stub from PDF upload",
             },
             null,

@@ -90,6 +90,18 @@ describe("validateSectionHtml", () => {
     expect(result.errors.length).toBe(2);
   });
 
+  it("fails when a data-id is used more than once", () => {
+    const html = `
+      <div data-id="pg001_gp001_t001">First use</div>
+      <div data-id="pg001_gp001_t001">Duplicate use</div>
+    `;
+    const result = validateSectionHtml(html, textIds, imageIds);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContainEqual(
+      expect.stringContaining("Duplicate data-id")
+    );
+  });
+
   it("passes for empty HTML", () => {
     const result = validateSectionHtml("", textIds, imageIds);
     expect(result.valid).toBe(true);

@@ -9,10 +9,6 @@ describe("bookMetadataSchema", () => {
       publisher: "Wiley & Putnam",
       language_code: "en",
       cover_page_number: 1,
-      table_of_contents: [
-        { title: "Chapter 1", page_number: 5 },
-        { title: "Chapter 2", page_number: 12 },
-      ],
       reasoning: "The cover is on page 1 with the title prominently displayed.",
     };
 
@@ -27,7 +23,6 @@ describe("bookMetadataSchema", () => {
       publisher: null,
       language_code: null,
       cover_page_number: null,
-      table_of_contents: null,
       reasoning: "No clear metadata could be extracted.",
     };
 
@@ -42,7 +37,6 @@ describe("bookMetadataSchema", () => {
       publisher: "Publisher Inc",
       language_code: "es",
       cover_page_number: 2,
-      table_of_contents: null,
       reasoning: "Multiple authors found on the title page.",
     };
 
@@ -62,21 +56,6 @@ describe("bookMetadataSchema", () => {
       publisher: null,
       language_code: null,
       cover_page_number: null,
-      table_of_contents: null,
-      reasoning: "r",
-    };
-
-    expect(() => bookMetadataSchema.parse(input)).toThrow();
-  });
-
-  it("rejects non-integer page numbers in TOC", () => {
-    const input = {
-      title: "T",
-      authors: [],
-      publisher: null,
-      language_code: null,
-      cover_page_number: null,
-      table_of_contents: [{ title: "Ch 1", page_number: 1.5 }],
       reasoning: "r",
     };
 
@@ -90,7 +69,6 @@ describe("bookMetadataSchema", () => {
       publisher: null,
       language_code: null,
       cover_page_number: 2.7,
-      table_of_contents: null,
       reasoning: "r",
     };
 

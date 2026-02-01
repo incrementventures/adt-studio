@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PageTextClassification } from "@/lib/books";
 import { TextTypeBadge } from "./text-type-badge";
+import { usePipelineBusy } from "../use-pipeline-refresh";
 
 interface TextClassificationPanelProps {
   label: string;
@@ -31,9 +32,24 @@ export function TextClassificationPanel({
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rerunning, setRerunning] = useState(false);
+  const pipelineBusy = usePipelineBusy(pageId, "text-classification");
   const [rerunError, setRerunError] = useState<string | null>(null);
   const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
   const versionDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sync from server props when router.refresh() delivers new data.
+  // Only reacts to prop changes — not isDirty changes — to avoid
+  // clobbering freshly-saved state with stale server props.
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+  useEffect(() => {
+    if (!isDirtyRef.current) {
+      setData(initialData);
+      setVersion(initialVersion);
+      setVersions(initialAvailableVersions);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, initialVersion, initialAvailableVersions]);
 
   const versionLabel = version === 1 ? "original" : `v${version}`;
 
@@ -71,16 +87,36 @@ export function TextClassificationPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const json = await res.json();
-      const { version: newVersion, ...rest } = json;
-      setData(rest as PageTextClassification);
-      setVersion(newVersion);
-      setVersions([1]);
-      setIsDirty(false);
-      router.refresh();
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            const { version: newVersion, ...rest } = job.result as { version: number } & PageTextClassification;
+            setData(rest as PageTextClassification);
+            setVersion(newVersion);
+            setVersions([1]);
+            setIsDirty(false);
+            setRerunning(false);
+            router.refresh();
+            es.close();
+          } else if (job.status === "failed") {
+            setRerunError(job.error ?? "Classification failed");
+            setRerunning(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setRerunError("Connection to job queue lost");
+        setRerunning(false);
+        es.close();
+      };
     } catch (err) {
       setRerunError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setRerunning(false);
     }
   }
@@ -89,7 +125,7 @@ export function TextClassificationPanel({
     <button
       type="button"
       onClick={handleRerun}
-      disabled={rerunning}
+      disabled={rerunning || pipelineBusy}
       className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
       title={data ? "Rerun classification" : "Run classification"}
     >
@@ -97,7 +133,7 @@ export function TextClassificationPanel({
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 20 20"
         fill="currentColor"
-        className={`h-4 w-4 ${rerunning ? "animate-spin" : ""}`}
+        className={`h-4 w-4 ${rerunning || pipelineBusy ? "animate-spin" : ""}`}
       >
         <path
           fillRule="evenodd"

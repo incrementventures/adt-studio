@@ -12,7 +12,7 @@ import {
   getLatestImageClassificationPath,
 } from "@/lib/books";
 import type { PageImageClassification } from "@/lib/pipeline/image-classification/image-classification-schema";
-import { getImageFilters } from "@/lib/config";
+import { loadBookConfig, getImageFilters } from "@/lib/config";
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import {
   classifyPageImages,
@@ -89,7 +89,7 @@ export async function POST(
     }
   }
 
-  const sizeFilter = getImageFilters().size;
+  const sizeFilter = getImageFilters(loadBookConfig(label)).size;
   const classification = classifyPageImages(imageInputs, sizeFilter);
 
   // Prepend the full page image as a pruned entry (available for cropping)

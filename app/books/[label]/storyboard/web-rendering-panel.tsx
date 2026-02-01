@@ -8,6 +8,7 @@ import {
   SectionAnnotationEditor,
   type SectionAnnotationEditorHandle,
 } from "./section-annotation-editor";
+import { usePipelineBusy } from "../use-pipeline-refresh";
 
 export interface EnrichedSection extends SectionRendering {
   version: number;
@@ -321,6 +322,7 @@ export function WebRenderingPanel({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pipelineBusy = usePipelineBusy(pageId, "web-rendering");
   const [sections, setSections] = useState<EnrichedSection[]>(
     initialSections ?? []
   );
@@ -345,12 +347,33 @@ export function WebRenderingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const json = await res.json();
-      setSections(json.sections ?? []);
-      router.refresh();
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            const result = job.result as { sections: EnrichedSection[] };
+            setSections(result.sections ?? []);
+            setLoading(false);
+            router.refresh();
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Rendering failed");
+            setLoading(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setLoading(false);
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setLoading(false);
     }
   }
@@ -380,18 +403,43 @@ export function WebRenderingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Edit failed (${res.status})`);
       }
-      const { section: updatedSection, version: newVersion, versions: newVersions } = await res.json();
-      setSections((prev) =>
-        prev.map((s) =>
-          s.section_index === sectionIndex
-            ? { ...updatedSection, version: newVersion, versions: newVersions }
-            : s
-        )
-      );
-      setEditingSection(null);
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            const { section: updatedSection, version: newVersion, versions: newVersions } = job.result as {
+              section: EnrichedSection;
+              version: number;
+              versions: number[];
+            };
+            setSections((prev) =>
+              prev.map((s) =>
+                s.section_index === sectionIndex
+                  ? { ...updatedSection, version: newVersion, versions: newVersions }
+                  : s
+              )
+            );
+            setEditingSection(null);
+            setEditLoading(false);
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Edit failed");
+            setEditLoading(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setEditLoading(false);
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setEditLoading(false);
     }
   }
@@ -408,7 +456,7 @@ export function WebRenderingPanel({
         <button
           type="button"
           onClick={handleRerun}
-          disabled={loading}
+          disabled={loading || pipelineBusy}
           className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-slate-600 disabled:opacity-50 transition-colors"
           title={initialSections ? "Rerun web rendering" : "Run web rendering"}
         >
@@ -416,7 +464,7 @@ export function WebRenderingPanel({
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            className={`h-4 w-4 ${loading || pipelineBusy ? "animate-spin" : ""}`}
           >
             <path
               fillRule="evenodd"

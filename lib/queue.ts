@@ -1,16 +1,31 @@
 import { extractMetadata } from "@/lib/pipeline/metadata/metadata";
-import { getBookMetadata } from "@/lib/books";
+import { getBookMetadata, listPages } from "@/lib/books";
+import {
+  runWebRendering,
+  runWebEdit,
+  runTextClassification,
+  runPageSectioning,
+  runPagePipeline,
+  type WebEditParams,
+} from "@/lib/pipeline/actions";
 
 // --- Types ---
 
 export type JobStatus = "queued" | "running" | "completed" | "failed";
-export type JobType = "metadata"; // extend later
+export type JobType =
+  | "metadata"
+  | "web-rendering"
+  | "web-edit"
+  | "text-classification"
+  | "page-sectioning"
+  | "page-pipeline";
 
 export interface Job {
   id: string;
   type: JobType;
   label: string;
   status: JobStatus;
+  params?: Record<string, unknown>;
   progress?: string;
   result?: unknown;
   error?: string;
@@ -30,26 +45,22 @@ class JobQueue {
   jobs = new Map<string, Job>();
   private pending: string[] = [];
   private running = 0;
-  private executors = new Map<JobType, JobExecutor>();
   private listeners = new Set<(job: Job) => void>();
-  private concurrency = 1;
+  private concurrency = 16;
   private nextId = 1;
 
-  constructor() {
-    this.registerExecutor("metadata", metadataExecutor);
-  }
-
-  registerExecutor(type: JobType, executor: JobExecutor) {
-    this.executors.set(type, executor);
-  }
-
-  enqueue(type: JobType, label: string): string {
+  enqueue(
+    type: JobType,
+    label: string,
+    params?: Record<string, unknown>
+  ): string {
     const id = `job_${this.nextId++}`;
     const job: Job = {
       id,
       type,
       label,
       status: "queued",
+      params,
       createdAt: Date.now(),
     };
     this.jobs.set(id, job);
@@ -65,7 +76,8 @@ class JobQueue {
       const job = this.jobs.get(jobId);
       if (!job) continue;
 
-      const executor = this.executors.get(job.type);
+      // Resolve executor dynamically so hot-reloaded code is always used
+      const executor = getExecutor(job.type);
       if (!executor) {
         this.updateJob(job, {
           status: "failed",
@@ -154,9 +166,22 @@ class JobQueue {
   }
 }
 
-// --- Metadata Executor ---
+// --- Executor lookup (resolved dynamically for hot-reload compatibility) ---
 
-const metadataExecutor: JobExecutor = async (job, update) => {
+function getExecutor(type: JobType): JobExecutor | undefined {
+  switch (type) {
+    case "metadata": return metadataExecutor;
+    case "web-rendering": return webRenderingExecutor;
+    case "web-edit": return webEditExecutor;
+    case "text-classification": return textClassificationExecutor;
+    case "page-sectioning": return pageSectioningExecutor;
+    case "page-pipeline": return pagePipelineExecutor;
+  }
+}
+
+// --- Executors ---
+
+const metadataExecutor: JobExecutor = (job, update) => {
   return new Promise<void>((resolve, reject) => {
     const obs = extractMetadata(job.label);
     obs.subscribe({
@@ -168,11 +193,55 @@ const metadataExecutor: JobExecutor = async (job, update) => {
       },
       complete() {
         const metadata = getBookMetadata(job.label);
-        update({ result: metadata, status: "completed", completedAt: Date.now() });
+        update({
+          result: metadata,
+          status: "completed",
+          completedAt: Date.now(),
+        });
+
+        // Enqueue page-pipeline jobs for every page in the book
+        const pages = listPages(job.label);
+        for (const page of pages) {
+          queue.enqueue("page-pipeline", job.label, { pageId: page.pageId });
+        }
+
         resolve();
       },
     });
   });
+};
+
+const webRenderingExecutor: JobExecutor = async (job, update) => {
+  const pageId = job.params?.pageId as string;
+  const result = await runWebRendering(job.label, pageId, (msg) =>
+    update({ progress: msg })
+  );
+  update({ result, status: "completed", completedAt: Date.now() });
+};
+
+const webEditExecutor: JobExecutor = async (job, update) => {
+  const result = await runWebEdit(job.label, job.params as unknown as WebEditParams);
+  update({ result, status: "completed", completedAt: Date.now() });
+};
+
+const textClassificationExecutor: JobExecutor = async (job, update) => {
+  const pageId = job.params?.pageId as string;
+  const result = await runTextClassification(job.label, pageId);
+  update({ result, status: "completed", completedAt: Date.now() });
+};
+
+const pageSectioningExecutor: JobExecutor = async (job, update) => {
+  const pageId = job.params?.pageId as string;
+  const result = await runPageSectioning(job.label, pageId);
+  update({ result, status: "completed", completedAt: Date.now() });
+};
+
+const pagePipelineExecutor: JobExecutor = async (job, update) => {
+  const pageId = job.params?.pageId as string;
+  await runPagePipeline(job.label, pageId, (msg) =>
+    update({ progress: msg })
+  );
+  update({ status: "completed", completedAt: Date.now() });
 };
 
 // --- Singleton ---
