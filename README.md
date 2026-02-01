@@ -22,6 +22,26 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Testing
+
+Run the full test suite:
+
+```bash
+pnpm test
+```
+
+Tests use a pre-built SQLite database at `fixtures/raven/raven.db` that contains page text, image hashes, and LLM metadata for the raven fixture book. Integration tests set `BOOKS_ROOT=fixtures` so the pipeline finds this DB.
+
+### Rebuilding fixtures
+
+If you change the DB schema or fixture data, regenerate the fixture DB:
+
+```bash
+npx tsx fixtures/build-fixture-db.ts
+```
+
+This reads the existing fixture files (`text.txt`, PNGs, `metadata.json`) and populates a fresh `raven.db` with the current schema. Commit the resulting DB file.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
