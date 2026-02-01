@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { lastValueFrom, toArray } from "rxjs";
 import { classifyText } from "../text-classification";
 import { pageTextClassificationSchema } from "../text-classification-schema";
+import { closeAllDbs } from "@/lib/db";
 
 const booksRoot = path.resolve("fixtures");
 const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");
@@ -16,6 +17,26 @@ if (!hasPagesOnDisk) {
 }
 
 describe("text-classification integration", () => {
+  let prevBooksRoot: string | undefined;
+
+  beforeAll(() => {
+    prevBooksRoot = process.env.BOOKS_ROOT;
+    process.env.BOOKS_ROOT = booksRoot;
+  });
+
+  afterAll(() => {
+    closeAllDbs();
+    if (prevBooksRoot === undefined) delete process.env.BOOKS_ROOT;
+    else process.env.BOOKS_ROOT = prevBooksRoot;
+    // Clean up DB created during test
+    const dbPath = path.join(booksRoot, "raven", "raven.db");
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const walPath = dbPath + "-wal";
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+    const shmPath = dbPath + "-shm";
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+  });
+
   it.skipIf(!hasPagesOnDisk)(
     "classifies text groups for raven and validates against schema",
     { timeout: 120_000 },
