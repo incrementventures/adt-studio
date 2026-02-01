@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import ReactCrop, {
   type Crop,
   type PixelCrop,
 } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
+import { dialogStyles } from "@/app/ui/dialog-styles";
 
 interface CropCoords {
   x: number;
@@ -29,10 +30,20 @@ export function ImageCropDialog({
   onCrop,
   onClose,
 }: ImageCropDialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [crop, setCrop] = useState<Crop | undefined>();
   const [pixelCrop, setPixelCrop] = useState<PixelCrop | undefined>();
   const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    const dlg = dialogRef.current;
+    if (!dlg) return;
+    dlg.showModal();
+    const handleClose = () => onClose();
+    dlg.addEventListener("close", handleClose);
+    return () => dlg.removeEventListener("close", handleClose);
+  }, [onClose]);
 
   const onImageLoaded = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -84,26 +95,30 @@ export function ImageCropDialog({
     onCrop(undefined);
   }
 
-  const mouseDownTarget = useRef<EventTarget | null>(null);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-      onMouseDown={(e) => {
-        mouseDownTarget.current = e.target;
-      }}
+    <dialog
+      ref={dialogRef}
+      className={dialogStyles.dialog.replace("max-w-lg", "max-w-fit")}
       onClick={(e) => {
-        if (
-          e.target === e.currentTarget &&
-          mouseDownTarget.current === e.currentTarget
-        )
-          onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
+        if (e.target === dialogRef.current) dialogRef.current.close();
       }}
     >
-      <div className="flex max-h-[90vh] max-w-[90vw] flex-col gap-3 rounded-xl bg-background p-4 shadow-2xl border border-border">
+      {/* Header */}
+      <div className={dialogStyles.header}>
+        <h2 className={dialogStyles.headerTitle}>Crop Image</h2>
+        <button
+          onClick={() => dialogRef.current?.close()}
+          className={dialogStyles.headerClose}
+          aria-label="Close"
+        >
+          <svg width="14" height="14" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11.78 4.28a.75.75 0 0 0-1.06-1.06L7.5 6.44 4.28 3.22a.75.75 0 0 0-1.06 1.06L6.44 7.5 3.22 10.72a.75.75 0 1 0 1.06 1.06L7.5 8.56l3.22 3.22a.75.75 0 1 0 1.06-1.06L8.56 7.5l3.22-3.22Z" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className={dialogStyles.body}>
         <div className="overflow-hidden">
           <ReactCrop
             crop={crop}
@@ -118,30 +133,20 @@ export function ImageCropDialog({
             />
           </ReactCrop>
         </div>
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={handleClear}
-            className="cursor-pointer rounded px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-surface transition-colors"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="cursor-pointer rounded px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-surface transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            className="cursor-pointer rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-500 transition-colors"
-          >
-            Apply
-          </button>
-        </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className={dialogStyles.footer}>
+        <button type="button" onClick={handleClear} className={dialogStyles.secondaryBtn}>
+          Clear
+        </button>
+        <button type="button" onClick={() => dialogRef.current?.close()} className={dialogStyles.cancelBtn}>
+          Cancel
+        </button>
+        <button type="button" onClick={handleApply} className={dialogStyles.primaryBtn}>
+          Apply
+        </button>
+      </div>
+    </dialog>
   );
 }
