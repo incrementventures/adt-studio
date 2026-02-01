@@ -414,6 +414,7 @@ export function getPageSectioning(
 export { type PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 export { type PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
 export { type SectionRendering, type WebRendering } from "./pipeline/web-rendering/web-rendering-schema";
+export { type LlmLogEntry } from "./pipeline/llm-log";
 
 export function listWebRenderingVersions(
   label: string,
@@ -511,6 +512,22 @@ export function getWebRendering(
   }
 
   return sections.length > 0 ? { sections } : null;
+}
+
+export function getLlmLog(
+  label: string,
+  limit = 500
+): import("./pipeline/llm-log").LlmLogEntry[] {
+  const booksRoot = getBooksRoot();
+  const logFile = path.join(booksRoot, label, "llm-log.jsonl");
+  if (!fs.existsSync(logFile)) return [];
+
+  const lines = fs.readFileSync(logFile, "utf-8").split("\n").filter(Boolean);
+  const entries = lines.map(
+    (line) => JSON.parse(line) as import("./pipeline/llm-log").LlmLogEntry
+  );
+  entries.reverse();
+  return entries.slice(0, limit);
 }
 
 function countPages(pagesDir: string): number {

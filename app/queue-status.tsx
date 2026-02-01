@@ -78,7 +78,7 @@ export default function QueueStatus() {
   return (
     <div
       ref={containerRef}
-      className="fixed top-2.5 right-4 z-50"
+      className="relative"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -99,7 +99,7 @@ export default function QueueStatus() {
         const visible = sortedJobs.slice(0, maxVisible);
         const remaining = sortedJobs.length - visible.length;
         return (
-          <div className="mt-2 w-72 rounded-lg border border-slate-700 bg-slate-900 shadow-lg shadow-black/40">
+          <div className="absolute right-0 top-full mt-2 w-72 rounded-lg border border-slate-700 bg-slate-900 shadow-lg shadow-black/40">
             <div className="px-3 py-2 text-xs font-semibold text-slate-400 border-b border-slate-700">
               Active Jobs
             </div>

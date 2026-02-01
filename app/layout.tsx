@@ -27,10 +27,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-x-hidden`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-x-hidden [--header-h:2.75rem]`}
       >
-        <header className="border-b border-slate-700/50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-lg shadow-black/20">
-          <div className="flex items-center justify-between px-4 py-3">
+        <header className="fixed inset-x-0 top-0 z-30 h-[var(--header-h)] border-b border-slate-700/50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-lg shadow-black/20">
+          <div className="flex h-full items-center justify-between px-4">
             <Link
               href="/"
               className="flex items-center gap-2.5 text-lg font-semibold tracking-tight text-white"
@@ -40,10 +40,10 @@ export default function RootLayout({
               </span>
               ADT Studio
             </Link>
+            <QueueStatus />
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
-        <QueueStatus />
+        <main className="mx-auto max-w-7xl px-4 pb-6 pt-[calc(var(--header-h)+1.5rem)]">{children}</main>
       </body>
     </html>
   );
