@@ -8,17 +8,13 @@ describe("resolveBookPaths", () => {
     const bookDir = path.resolve("books", "raven");
 
     expect(paths.bookDir).toBe(bookDir);
-    expect(paths.extractDir).toBe(path.join(bookDir, "extract"));
-    expect(paths.pagesDir).toBe(path.join(bookDir, "extract", "pages"));
+    expect(paths.imagesDir).toBe(path.join(bookDir, "images"));
     expect(paths.metadataDir).toBe(path.join(bookDir, "metadata"));
     expect(paths.metadataFile).toBe(
       path.join(bookDir, "metadata", "metadata.json")
     );
     expect(paths.textClassificationDir).toBe(
       path.join(bookDir, "text-classification")
-    );
-    expect(paths.imageClassificationDir).toBe(
-      path.join(bookDir, "image-classification")
     );
   });
 

@@ -7,12 +7,12 @@ import { pageTextClassificationSchema } from "../text-classification-schema";
 import { closeAllDbs } from "@/lib/db";
 
 const booksRoot = path.resolve("fixtures");
-const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");
-const hasPagesOnDisk = fs.existsSync(ravenPagesDir);
+const ravenImagesDir = path.join(booksRoot, "raven", "images");
+const hasPagesOnDisk = fs.existsSync(ravenImagesDir);
 
 if (!hasPagesOnDisk) {
   console.warn(
-    `Skipping text-classification integration tests: ${ravenPagesDir} not found`
+    `Skipping text-classification integration tests: ${ravenImagesDir} not found`
   );
 }
 
@@ -50,10 +50,11 @@ describe("text-classification integration", () => {
         expect(phases).toContain("loading");
         expect(phases).toContain("extracting");
       }
-      const pageDirs = fs
-        .readdirSync(ravenPagesDir)
-        .filter((d) => /^pg\d{3}$/.test(d))
+      const pageImages = fs
+        .readdirSync(ravenImagesDir)
+        .filter((f) => /^pg\d{3}_page\.png$/.test(f))
         .sort();
+      const pageDirs = pageImages.map((f) => f.replace("_page.png", ""));
 
       expect(pageDirs.length).toBeGreaterThan(0);
 

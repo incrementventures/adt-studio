@@ -26,25 +26,30 @@ const { bookMetadataSchema } = await import("../lib/pipeline/metadata/metadata-s
 
 const db = getDb("raven");
 
-// 1. Populate pages table from text.txt files
-const pagesDir = path.join(ravenDir, "extract", "pages");
-const pageDirs = fs.readdirSync(pagesDir).filter((d) => /^pg\d{3}$/.test(d)).sort();
+// 1. Populate pages table and images from flat images/ dir
+const imagesDir = path.join(ravenDir, "images");
+const imageFiles = fs.readdirSync(imagesDir).sort();
 
-for (const pageId of pageDirs) {
+// Discover page IDs from page images
+const pageIds = imageFiles
+  .filter((f) => /^pg\d{3}_page\.png$/.test(f))
+  .map((f) => f.replace("_page.png", ""))
+  .sort();
+
+for (const pageId of pageIds) {
   const pageNumber = parseInt(pageId.slice(2), 10);
-  const textPath = path.join(pagesDir, pageId, "text.txt");
-  const text = fs.existsSync(textPath) ? fs.readFileSync(textPath, "utf-8") : "";
-  putPageText("raven", pageId, pageNumber, text);
+  // Text files no longer on disk; insert empty text (tests use DB)
+  putPageText("raven", pageId, pageNumber, "");
 
   // Page image
-  const pageImagePath = path.join(pagesDir, pageId, "page.png");
+  const pageImagePath = path.join(imagesDir, `${pageId}_page.png`);
   if (fs.existsSync(pageImagePath)) {
     const buf = fs.readFileSync(pageImagePath);
     putImage(
       "raven",
       `${pageId}_page`,
       pageId,
-      `extract/pages/${pageId}/page.png`,
+      `images/${pageId}_page.png`,
       hashBuffer(buf),
       buf.readUInt32BE(16),
       buf.readUInt32BE(20),
@@ -53,23 +58,21 @@ for (const pageId of pageDirs) {
   }
 
   // Extracted images
-  const imagesDir = path.join(pagesDir, pageId, "images");
-  if (fs.existsSync(imagesDir)) {
-    const imageFiles = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_im\d{3}\.png$/.test(f)).sort();
-    for (const imgFile of imageFiles) {
-      const imageId = imgFile.replace(/\.png$/, "");
-      const buf = fs.readFileSync(path.join(imagesDir, imgFile));
-      putImage(
-        "raven",
-        imageId,
-        pageId,
-        `extract/pages/${pageId}/images/${imgFile}`,
-        hashBuffer(buf),
-        buf.readUInt32BE(16),
-        buf.readUInt32BE(20),
-        "extract"
-      );
-    }
+  const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`);
+  const extractedImages = imageFiles.filter((f) => re.test(f)).sort();
+  for (const imgFile of extractedImages) {
+    const imageId = imgFile.replace(/\.png$/, "");
+    const buf = fs.readFileSync(path.join(imagesDir, imgFile));
+    putImage(
+      "raven",
+      imageId,
+      pageId,
+      `images/${imgFile}`,
+      hashBuffer(buf),
+      buf.readUInt32BE(16),
+      buf.readUInt32BE(20),
+      "extract"
+    );
   }
 }
 
@@ -89,7 +92,5 @@ closeAllDbs();
 
 const stats = fs.statSync(dbPath);
 console.log(`Built ${dbPath} (${(stats.size / 1024).toFixed(1)} KB)`);
-console.log(`  ${pageDirs.length} pages`);
-
-const imgCount = db ? 0 : 0; // DB is closed, just report pages
+console.log(`  ${pageIds.length} pages`);
 console.log("Done.");

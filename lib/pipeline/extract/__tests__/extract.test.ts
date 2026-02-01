@@ -53,15 +53,14 @@ describe("extract", () => {
     expect(progress[0].label).toBe("raven");
     expect(progress[0].page).toBe(1);
 
-    const pagesDir = path.join(tmpDir, "raven", "extract", "pages");
-    expect(fs.existsSync(pagesDir)).toBe(true);
+    const imagesDir = path.join(tmpDir, "raven", "images");
+    expect(fs.existsSync(imagesDir)).toBe(true);
 
-    // Check first page
-    const page001 = path.join(pagesDir, "pg001");
-    expect(fs.existsSync(path.join(page001, "page.png"))).toBe(true);
+    // Check first page image
+    expect(fs.existsSync(path.join(imagesDir, "pg001_page.png"))).toBe(true);
 
     // page.png should be a valid PNG (starts with PNG magic bytes)
-    const png = fs.readFileSync(path.join(page001, "page.png"));
+    const png = fs.readFileSync(path.join(imagesDir, "pg001_page.png"));
     expect(png[0]).toBe(0x89);
     expect(png[1]).toBe(0x50); // P
     expect(png[2]).toBe(0x4e); // N
@@ -75,10 +74,8 @@ describe("extract", () => {
     expect(row).toBeDefined();
     expect(row!.text.length).toBeGreaterThan(0);
 
-    // Embedded images should be extracted
-    const imagesDir = path.join(page001, "images");
-    expect(fs.existsSync(imagesDir)).toBe(true);
-    const images = fs.readdirSync(imagesDir);
+    // Embedded images should be extracted to flat images/ dir
+    const images = fs.readdirSync(imagesDir).filter((f) => /^pg001_im\d{3}\.png$/.test(f));
     expect(images.length).toBeGreaterThan(0);
 
     // Each extracted image should be a valid PNG
@@ -114,9 +111,9 @@ describe("extract", () => {
         expect(progress[0]).toEqual({ page: 1, totalPages: 3, label: "raven" });
         expect(progress[2]).toEqual({ page: 3, totalPages: 3, label: "raven" });
 
-        const pagesDir = path.join(dir, "raven", "extract", "pages");
-        const dirs = fs.readdirSync(pagesDir).sort();
-        expect(dirs).toEqual(["pg002", "pg003", "pg004"]);
+        const imagesDir = path.join(dir, "raven", "images");
+        const pageImages = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_page\.png$/.test(f)).sort();
+        expect(pageImages).toEqual(["pg002_page.png", "pg003_page.png", "pg004_page.png"]);
       } finally {
         restore();
         fs.rmSync(dir, { recursive: true, force: true });
@@ -145,12 +142,12 @@ describe("extract", () => {
         expect(progress.length).toBe(2);
         expect(progress[0].totalPages).toBe(2);
 
-        const pagesDir = path.join(dir, "raven", "extract", "pages");
-        const dirs = fs.readdirSync(pagesDir).sort();
-        expect(dirs.length).toBe(2);
-        // First dir should be the (totalPages-1)-th page
-        const expectedFirst = "pg" + String(totalPages - 1).padStart(3, "0");
-        expect(dirs[0]).toBe(expectedFirst);
+        const imagesDir = path.join(dir, "raven", "images");
+        const pageImages = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_page\.png$/.test(f)).sort();
+        expect(pageImages.length).toBe(2);
+        // First image should be the (totalPages-1)-th page
+        const expectedFirst = "pg" + String(totalPages - 1).padStart(3, "0") + "_page.png";
+        expect(pageImages[0]).toBe(expectedFirst);
         restoreMain();
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
@@ -169,9 +166,9 @@ describe("extract", () => {
         expect(progress[0]).toEqual({ page: 1, totalPages: 3, label: "raven" });
         expect(progress[2]).toEqual({ page: 3, totalPages: 3, label: "raven" });
 
-        const pagesDir = path.join(dir, "raven", "extract", "pages");
-        const dirs = fs.readdirSync(pagesDir).sort();
-        expect(dirs).toEqual(["pg001", "pg002", "pg003"]);
+        const imagesDir = path.join(dir, "raven", "images");
+        const pageImages = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_page\.png$/.test(f)).sort();
+        expect(pageImages).toEqual(["pg001_page.png", "pg002_page.png", "pg003_page.png"]);
       } finally {
         restore();
         fs.rmSync(dir, { recursive: true, force: true });
@@ -207,9 +204,9 @@ describe("extract", () => {
         expect(progress.length).toBe(1);
         expect(progress[0]).toEqual({ page: 1, totalPages: 1, label: "raven" });
 
-        const pagesDir = path.join(dir, "raven", "extract", "pages");
-        const dirs = fs.readdirSync(pagesDir);
-        expect(dirs).toEqual(["pg003"]);
+        const imagesDir = path.join(dir, "raven", "images");
+        const pageImages = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_page\.png$/.test(f));
+        expect(pageImages).toEqual(["pg003_page.png"]);
       } finally {
         restore();
         fs.rmSync(dir, { recursive: true, force: true });
@@ -231,24 +228,25 @@ describe("extract", () => {
       expect(progress.length).toBe(1);
       expect(progress[0].totalPages).toBe(1);
 
-      const pagesDir = path.join(egyptDir, "ancient-egypt", "extract", "pages");
+      const imagesDir = path.join(egyptDir, "ancient-egypt", "images");
 
-      // pg006 should exist with images
-      const pg006Images = path.join(pagesDir, "pg006", "images");
-      expect(fs.existsSync(pg006Images)).toBe(true);
-      const images = fs.readdirSync(pg006Images).filter((f) =>
-        f.endsWith(".png")
+      // pg006 page image should exist
+      expect(fs.existsSync(path.join(imagesDir, "pg006_page.png"))).toBe(true);
+
+      // pg006 should have extracted images
+      const images = fs.readdirSync(imagesDir).filter((f) =>
+        /^pg006_im\d{3}\.png$/.test(f)
       );
       expect(images.length).toBeGreaterThanOrEqual(1);
 
       // Verify extracted image is a valid PNG
-      const imgPng = fs.readFileSync(path.join(pg006Images, images[0]));
+      const imgPng = fs.readFileSync(path.join(imagesDir, images[0]));
       expect(imgPng[0]).toBe(0x89);
       expect(imgPng[1]).toBe(0x50);
 
       // Pages outside range should not exist
-      expect(fs.existsSync(path.join(pagesDir, "pg005"))).toBe(false);
-      expect(fs.existsSync(path.join(pagesDir, "pg007"))).toBe(false);
+      expect(fs.existsSync(path.join(imagesDir, "pg005_page.png"))).toBe(false);
+      expect(fs.existsSync(path.join(imagesDir, "pg007_page.png"))).toBe(false);
     } finally {
       restore();
       fs.rmSync(egyptDir, { recursive: true, force: true });

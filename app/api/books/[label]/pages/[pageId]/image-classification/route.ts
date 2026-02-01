@@ -72,20 +72,21 @@ export async function POST(
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
 
-  // Discover extracted images
-  const imagesDir = path.join(paths.pagesDir, pageId, "images");
+  // Discover extracted images from flat images/ dir
+  const imagesDir = paths.imagesDir;
   const imageInputs: ImageInput[] = [];
   if (fs.existsSync(imagesDir)) {
+    const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`, "i");
     const imageFiles = fs
       .readdirSync(imagesDir)
-      .filter((f) => /^pg\d{3}_im\d{3}\.png$/i.test(f))
+      .filter((f) => re.test(f))
       .sort();
     for (const imgFile of imageFiles) {
       const imageId = imgFile.replace(/\.png$/i, "");
       const buf = fs.readFileSync(path.join(imagesDir, imgFile));
       imageInputs.push({
         image_id: imageId,
-        path: `extract/pages/${pageId}/images/${imgFile}`,
+        path: `images/${imgFile}`,
         buf,
       });
     }
@@ -95,14 +96,14 @@ export async function POST(
   const classification = classifyPageImages(imageInputs, sizeFilter);
 
   // Prepend the full page image as a pruned entry (available for cropping)
-  const pageImagePath = path.join(paths.pagesDir, pageId, "page.png");
+  const pageImagePath = path.join(paths.imagesDir, `${pageId}_page.png`);
   if (fs.existsSync(pageImagePath)) {
     const pageBuf = fs.readFileSync(pageImagePath);
     const pageWidth = pageBuf.readUInt32BE(16);
     const pageHeight = pageBuf.readUInt32BE(20);
     classification.images.unshift({
       image_id: `${pageId}_im000`,
-      path: `extract/pages/${pageId}/page.png`,
+      path: `images/${pageId}_page.png`,
       width: pageWidth,
       height: pageHeight,
       is_pruned: true,
@@ -180,16 +181,14 @@ export async function PATCH(
   const data: PageImageClassification = body.data;
   const nextVersion = latest.version + 1;
   const paths = resolveBookPaths(label, getBooksRoot());
-  const imagesDir = path.join(paths.pagesDir, pageId, "images");
-  const classDir = paths.imageClassificationDir;
-  fs.mkdirSync(classDir, { recursive: true });
+  const imagesDir = paths.imagesDir;
+  fs.mkdirSync(imagesDir, { recursive: true });
 
-  // Scan both imagesDir and imageClassificationDir for max _imNNN number
+  // Scan imagesDir for max _imNNN number
   const imNumRe = new RegExp(`^${pageId}_im(\\d{3})\\.png$`);
   let maxNum = 0;
-  for (const dir of [imagesDir, classDir]) {
-    if (!fs.existsSync(dir)) continue;
-    for (const f of fs.readdirSync(dir)) {
+  if (fs.existsSync(imagesDir)) {
+    for (const f of fs.readdirSync(imagesDir)) {
       const m = imNumRe.exec(f);
       if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
     }
@@ -198,14 +197,14 @@ export async function PATCH(
   // Assign final IDs and generate crop files for entries with source_region
   for (const img of data.images) {
     if (!img.source_region || !img.source_image_id) continue;
-    const croppedPath = path.join(classDir, `${img.image_id}.png`);
+    const croppedPath = path.join(imagesDir, `${img.image_id}.png`);
     if (fs.existsSync(croppedPath)) continue;
 
     // Assign next available _imNNN ID
     maxNum++;
     const newId = `${pageId}_im${String(maxNum).padStart(3, "0")}`;
     img.image_id = newId;
-    img.path = `image-classification/${newId}.png`;
+    img.path = `images/${newId}.png`;
 
     // Resolve source image via its entry's path
     const sourceEntry = data.images.find((e) => e.image_id === img.source_image_id);
@@ -216,9 +215,9 @@ export async function PATCH(
     const { x, y, width, height } = img.source_region;
     await sharp(buf)
       .extract({ left: x, top: y, width, height })
-      .toFile(path.join(classDir, `${newId}.png`));
-    const cropBuf = fs.readFileSync(path.join(classDir, `${newId}.png`));
-    putImage(label, newId, pageId, `image-classification/${newId}.png`, hashBuffer(cropBuf), width, height, "crop");
+      .toFile(path.join(imagesDir, `${newId}.png`));
+    const cropBuf = fs.readFileSync(path.join(imagesDir, `${newId}.png`));
+    putImage(label, newId, pageId, `images/${newId}.png`, hashBuffer(cropBuf), width, height, "crop");
   }
 
   // Write versioned data to DB

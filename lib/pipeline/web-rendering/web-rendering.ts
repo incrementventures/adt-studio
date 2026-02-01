@@ -41,16 +41,11 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
       .readdirSync(dir)
       .filter((f) => /^pg\d{3}\.json$/.test(f));
     if (files.length === 0) return null;
-    const pagesDir = path.resolve(
-      ctx.outputRoot,
-      ctx.label,
-      "extract",
-      "pages"
-    );
-    if (fs.existsSync(pagesDir)) {
+    const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
+    if (fs.existsSync(imagesDir)) {
       const pageCount = fs
-        .readdirSync(pagesDir)
-        .filter((d) => /^pg\d{3}$/.test(d)).length;
+        .readdirSync(imagesDir)
+        .filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
       if (files.length < pageCount) return null;
     }
     return files
@@ -100,11 +95,8 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
                 .toString("base64");
 
               // Load extracted images for resolving part_ids to base64
-              const imagesDir = path.join(
-                path.dirname(p.imagePath),
-                "images"
-              );
               const bookDir = path.resolve(ctx.outputRoot, ctx.label);
+              const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
               const allImagesForPage = loadUnprunedImagesFromDir(
                 bookDir,
                 imagesDir,

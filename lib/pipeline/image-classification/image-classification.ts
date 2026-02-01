@@ -36,16 +36,11 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
         .readdirSync(dir)
         .filter((f) => /^pg\d{3}\.json$/.test(f));
       if (files.length === 0) return null;
-      const pagesDir = path.resolve(
-        ctx.outputRoot,
-        ctx.label,
-        "extract",
-        "pages"
-      );
-      if (fs.existsSync(pagesDir)) {
+      const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
+      if (fs.existsSync(imagesDir)) {
         const pageCount = fs
-          .readdirSync(pagesDir)
-          .filter((d) => /^pg\d{3}$/.test(d)).length;
+          .readdirSync(imagesDir)
+          .filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
         if (files.length < pageCount) return null;
       }
       return files
@@ -84,22 +79,20 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
               const p = allPages[i];
 
               // Discover extracted images
-              const imagesDir = path.join(
-                path.dirname(p.imagePath),
-                "images"
-              );
+              const imagesDir = path.dirname(p.imagePath);
               const imageInputs: ImageInput[] = [];
               if (fs.existsSync(imagesDir)) {
+                const re = new RegExp(`^${p.pageId}_im\\d{3}\\.png$`, "i");
                 const imageFiles = fs
                   .readdirSync(imagesDir)
-                  .filter((f) => /\.png$/i.test(f))
+                  .filter((f) => re.test(f))
                   .sort();
                 for (const imgFile of imageFiles) {
                   const imageId = imgFile.replace(/\.png$/i, "");
                   const buf = fs.readFileSync(path.join(imagesDir, imgFile));
                   imageInputs.push({
                     image_id: imageId,
-                    path: `extract/pages/${p.pageId}/images/${imgFile}`,
+                    path: `images/${imgFile}`,
                     buf,
                   });
                 }
@@ -115,7 +108,7 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
                 const pageBuf = fs.readFileSync(p.imagePath);
                 classification.images.unshift({
                   image_id: `${p.pageId}_im000`,
-                  path: `extract/pages/${p.pageId}/page.png`,
+                  path: `images/${p.pageId}_page.png`,
                   width: pageBuf.readUInt32BE(16),
                   height: pageBuf.readUInt32BE(20),
                   is_pruned: true,

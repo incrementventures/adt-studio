@@ -25,7 +25,7 @@ export async function GET(
   }
 
   const booksRoot = getBooksRoot();
-  const { bookDir, pagesDir } = resolveBookPaths(label, booksRoot);
+  const { bookDir, imagesDir } = resolveBookPaths(label, booksRoot);
 
   // Fast path: DB lookup
   const relPath = getImageByHash(label, hash);
@@ -42,27 +42,27 @@ export async function GET(
     }
   }
 
-  // Fallback: scan filesystem (for images not yet in DB)
+  // Fallback: scan images/ directory
   const candidates: string[] = [];
 
-  if (pageId) {
-    const pageDir = path.join(pagesDir, pageId);
-    const pageImage = path.join(pageDir, "page.png");
-    if (fs.existsSync(pageImage)) candidates.push(pageImage);
+  if (fs.existsSync(imagesDir)) {
+    if (pageId) {
+      // Scan for specific page images
+      const pageImage = path.join(imagesDir, `${pageId}_page.png`);
+      if (fs.existsSync(pageImage)) candidates.push(pageImage);
 
-    const imagesDir = path.join(pageDir, "images");
-    if (fs.existsSync(imagesDir)) {
+      const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`);
       for (const entry of fs.readdirSync(imagesDir, { withFileTypes: true })) {
-        if (entry.isFile() && entry.name.endsWith(".png")) {
+        if (entry.isFile() && re.test(entry.name)) {
           candidates.push(path.join(imagesDir, entry.name));
         }
       }
-    }
-  } else if (fs.existsSync(pagesDir)) {
-    for (const entry of fs.readdirSync(pagesDir, { withFileTypes: true })) {
-      if (entry.isDirectory() && PAGE_RE.test(entry.name)) {
-        const pageImage = path.join(pagesDir, entry.name, "page.png");
-        if (fs.existsSync(pageImage)) candidates.push(pageImage);
+    } else {
+      // Scan all page images
+      for (const entry of fs.readdirSync(imagesDir, { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.endsWith("_page.png")) {
+          candidates.push(path.join(imagesDir, entry.name));
+        }
       }
     }
   }

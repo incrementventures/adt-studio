@@ -23,18 +23,16 @@ Each book gets its own directory under `BOOKS_ROOT` (default: `books/`):
 
 ```
 books/<label>/
-  <label>.db           # SQLite database (schema v5, WAL mode)
+  <label>.db           # SQLite database (schema v6, WAL mode)
   <label>.pdf          # Original PDF
   config.yaml          # Per-book config overrides
-  extract/
-    pages/
-      pg001/
-        page.png       # Full page render at ~144 DPI
-        images/        # Embedded raster images
-          pg001_im001.png
+  images/
+    pg001_page.png     # Full page render at ~144 DPI
+    pg001_im001.png    # Embedded raster image
+    pg001_im002.png    # Crop from image classification
 ```
 
-The SQLite database stores page text, image metadata with content hashes, pipeline outputs (versioned), book metadata, and an LLM call log.
+All images live in a single flat `images/` directory per book. Page renders are named `{pageId}_page.png`, extracted images `{pageId}_im{NNN}.png`, and crops `{pageId}_im{NNN}.png` (next available number). The SQLite database stores page text, image metadata with content hashes, pipeline outputs (versioned), book metadata, and an LLM call log.
 
 ### Key dependencies
 
@@ -114,4 +112,4 @@ If you change the DB schema or fixture data, regenerate the fixture DB:
 npx tsx fixtures/build-fixture-db.ts
 ```
 
-This reads the existing fixture files (`text.txt`, PNGs, `metadata.json`) and populates a fresh `raven.db` with the current schema. Commit the resulting `.db` file.
+This reads the fixture images from `fixtures/raven/images/` and `metadata.json`, then populates a fresh `raven.db` with the current schema. Commit the resulting `.db` file.

@@ -218,8 +218,7 @@ export function listBooks(): BookSummary[] {
       const metadata = getBookMetadata(label);
       if (!metadata) continue;
 
-      const paths = resolveBookPaths(label, root);
-      const pageCount = countPages(paths.pagesDir);
+      const pageCount = countPages(label);
       books.push({ label, metadata, pageCount });
     } catch {
       // Skip books with incompatible DB schemas
@@ -269,21 +268,20 @@ export interface PageSummary {
 }
 
 export function listPages(label: string): PageSummary[] {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  if (!fs.existsSync(paths.pagesDir)) return [];
-
-  return fs
-    .readdirSync(paths.pagesDir)
-    .filter((d) => /^pg\d{3}$/.test(d))
-    .sort()
-    .map((pageId) => buildPageSummary(label, paths.pagesDir, pageId));
+  const db = getDb(label);
+  const rows = db
+    .prepare("SELECT page_id FROM pages ORDER BY page_id")
+    .all() as { page_id: string }[];
+  return rows.map((row) => buildPageSummary(label, row.page_id));
 }
 
 export function getPage(label: string, pageId: string): PageSummary | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const pageDir = path.join(paths.pagesDir, pageId);
-  if (!fs.existsSync(pageDir)) return null;
-  return buildPageSummary(label, paths.pagesDir, pageId);
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT page_id FROM pages WHERE page_id = ?")
+    .get(pageId) as { page_id: string } | undefined;
+  if (!row) return null;
+  return buildPageSummary(label, pageId);
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +334,7 @@ export function getTextClassification(
 
 export function resolvePageImagePath(label: string, pageId: string): string {
   const paths = resolveBookPaths(label, getBooksRoot());
-  return path.join(paths.pagesDir, pageId, "page.png");
+  return path.join(paths.imagesDir, `${pageId}_page.png`);
 }
 
 export function resolveExtractedImagePath(
@@ -347,13 +345,16 @@ export function resolveExtractedImagePath(
   const booksRoot = getBooksRoot();
   const paths = resolveBookPaths(label, booksRoot);
 
-  const classification = getImageClassification(label, pageId);
-  const entry = classification?.data.images.find((i) => i.image_id === imageId);
-  if (entry?.path) {
-    return path.join(paths.bookDir, entry.path);
+  // Look up the image path from DB first
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT path FROM images WHERE image_id = ?")
+    .get(imageId) as { path: string } | undefined;
+  if (row?.path) {
+    return path.join(paths.bookDir, row.path);
   }
 
-  return path.join(paths.pagesDir, pageId, "images", `${imageId}.png`);
+  return path.join(paths.imagesDir, `${imageId}.png`);
 }
 
 export function resolveCoverImagePath(label: string): string | null {
@@ -408,8 +409,46 @@ export function getImageClassification(
 }
 
 // ---------------------------------------------------------------------------
-// Unpruned images (on-disk)
+// Unpruned images
 // ---------------------------------------------------------------------------
+
+export function loadUnprunedImages(
+  label: string,
+  pageId: string
+): { image_id: string; imageBase64: string }[] {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const result = getImageClassification(label, pageId);
+  const images: { image_id: string; imageBase64: string }[] = [];
+
+  if (result?.data) {
+    for (const entry of result.data.images) {
+      if (entry.is_pruned) continue;
+      const filePath = path.join(paths.bookDir, entry.path);
+      if (!fs.existsSync(filePath)) continue;
+      const imgBase64 = fs.readFileSync(filePath).toString("base64");
+      images.push({ image_id: entry.image_id, imageBase64: imgBase64 });
+    }
+  } else {
+    // Fallback: scan images dir for extracted images
+    const imagesDir = paths.imagesDir;
+    if (fs.existsSync(imagesDir)) {
+      const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`, "i");
+      const imageFiles = fs
+        .readdirSync(imagesDir)
+        .filter((f) => re.test(f))
+        .sort();
+      for (const imgFile of imageFiles) {
+        const imageId = imgFile.replace(/\.png$/i, "");
+        const imgBase64 = fs
+          .readFileSync(path.join(imagesDir, imgFile))
+          .toString("base64");
+        images.push({ image_id: imageId, imageBase64: imgBase64 });
+      }
+    }
+  }
+
+  return images;
+}
 
 export function loadUnprunedImagesFromDir(
   bookDir: string,
@@ -441,16 +480,6 @@ export function loadUnprunedImagesFromDir(
   }
 
   return images;
-}
-
-export function loadUnprunedImages(
-  label: string,
-  pageId: string
-): { image_id: string; imageBase64: string }[] {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const imagesDir = path.join(paths.pagesDir, pageId, "images");
-  const result = getImageClassification(label, pageId);
-  return loadUnprunedImagesFromDir(paths.bookDir, imagesDir, result?.data);
 }
 
 // ---------------------------------------------------------------------------
@@ -555,31 +584,29 @@ export function getLlmLog(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function countPages(pagesDir: string): number {
-  if (!fs.existsSync(pagesDir)) return 0;
-  return fs.readdirSync(pagesDir).filter((d) => /^pg\d{3}$/.test(d)).length;
+function countPages(label: string): number {
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT COUNT(*) as count FROM pages")
+    .get() as { count: number };
+  return row.count;
 }
 
 function buildPageSummary(
   label: string,
-  pagesDir: string,
   pageId: string
 ): PageSummary {
-  const pageDir = path.join(pagesDir, pageId);
-  const imagesDir = path.join(pageDir, "images");
-  const imageIds: string[] = [];
+  const db = getDb(label);
 
-  if (fs.existsSync(imagesDir)) {
-    for (const f of fs.readdirSync(imagesDir)) {
-      if (/^pg\d{3}_im\d{3}\.png$/.test(f)) {
-        imageIds.push(f.replace(/\.png$/, ""));
-      }
-    }
-    imageIds.sort();
-  }
+  // Get extracted image IDs from DB
+  const imageRows = db
+    .prepare(
+      "SELECT image_id FROM images WHERE page_id = ? AND source = 'extract' ORDER BY image_id"
+    )
+    .all(pageId) as { image_id: string }[];
+  const imageIds = imageRows.map((r) => r.image_id);
 
   // Read rawText from DB
-  const db = getDb(label);
   const row = db
     .prepare("SELECT text FROM pages WHERE page_id = ?")
     .get(pageId) as { text: string } | undefined;

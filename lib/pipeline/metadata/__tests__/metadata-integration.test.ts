@@ -7,12 +7,12 @@ import { bookMetadataSchema } from "../metadata-schema";
 import { closeAllDbs } from "@/lib/db";
 
 const booksRoot = path.resolve("fixtures");
-const ravenPagesDir = path.join(booksRoot, "raven", "extract", "pages");
-const hasPagesOnDisk = fs.existsSync(ravenPagesDir);
+const ravenImagesDir = path.join(booksRoot, "raven", "images");
+const hasPagesOnDisk = fs.existsSync(ravenImagesDir);
 
 if (!hasPagesOnDisk) {
   console.warn(
-    `Skipping metadata integration tests: ${ravenPagesDir} not found`
+    `Skipping metadata integration tests: ${ravenImagesDir} not found`
   );
 }
 

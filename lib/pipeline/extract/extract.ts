@@ -21,25 +21,17 @@ export interface PageProgress {
   label: string;
 }
 
-function readPagesFromDisk(label: string, pagesDir: string): Page[] {
+function readPagesFromDisk(label: string, imagesDir: string): Page[] {
   const db = getDb(label);
-  return fs
-    .readdirSync(pagesDir)
-    .filter((d) => /^pg\d{3}$/.test(d))
-    .sort()
-    .map((pageId) => {
-      const pageDir = path.join(pagesDir, pageId);
-      const row = db
-        .prepare("SELECT text FROM pages WHERE page_id = ?")
-        .get(pageId) as { text: string } | undefined;
-      const text = row?.text ?? "";
-      return {
-        pageId,
-        pageNumber: parseInt(pageId.slice(2), 10),
-        text,
-        imagePath: path.join(pageDir, "page.png"),
-      };
-    });
+  const rows = db
+    .prepare("SELECT page_id, page_number, text FROM pages ORDER BY page_id")
+    .all() as { page_id: string; page_number: number; text: string }[];
+  return rows.map((row) => ({
+    pageId: row.page_id,
+    pageNumber: row.page_number,
+    text: row.text,
+    imagePath: path.join(imagesDir, `${row.page_id}_page.png`),
+  }));
 }
 
 export interface PdfMetadata {
@@ -79,9 +71,8 @@ function extractPdfMetadata(doc: MupdfDocument): PdfMetadata {
   return metadata;
 }
 
-function writePdfMetadata(doc: MupdfDocument, label: string, extractDir: string): void {
+function writePdfMetadata(doc: MupdfDocument, label: string): void {
   const metadata = extractPdfMetadata(doc);
-  fs.mkdirSync(extractDir, { recursive: true });
   putPdfMetadata(label, metadata);
 }
 
@@ -100,26 +91,23 @@ function openPdf(pdfPath: string): MupdfDocument {
   }
 }
 
-function extractPage(doc: MupdfDocument, i: number, label: string, bookDir: string): Page {
+function extractPage(doc: MupdfDocument, i: number, label: string, imagesDir: string): Page {
   const pageNum = i + 1;
   const pageId = "pg" + String(pageNum).padStart(3, "0");
-  const pageDir = path.join(bookDir, "pages", pageId);
-  const imagesDir = path.join(pageDir, "images");
-  fs.mkdirSync(imagesDir, { recursive: true });
 
   const page = doc.loadPage(i);
 
   // Render full-page image at 2x scale (~144 DPI)
   const matrix = mupdf.Matrix.scale(2, 2);
   const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false);
-  const imagePath = path.join(pageDir, "page.png");
+  const imagePath = path.join(imagesDir, `${pageId}_page.png`);
   const pagePngBuf = Buffer.from(pixmap.asPNG());
   fs.writeFileSync(imagePath, pagePngBuf);
   putImage(
     label,
     `${pageId}_page`,
     pageId,
-    `extract/pages/${pageId}/page.png`,
+    `images/${pageId}_page.png`,
     hashBuffer(pagePngBuf),
     pagePngBuf.readUInt32BE(16),
     pagePngBuf.readUInt32BE(20),
@@ -160,7 +148,7 @@ function extractPage(doc: MupdfDocument, i: number, label: string, bookDir: stri
               label,
               imgId,
               pageId,
-              `extract/pages/${pageId}/images/${imgFileName}`,
+              `images/${imgFileName}`,
               hashBuffer(imgBuf),
               imgBuf.readUInt32BE(16),
               imgBuf.readUInt32BE(20),
@@ -181,24 +169,20 @@ function extractPage(doc: MupdfDocument, i: number, label: string, bookDir: stri
     extractImagesFromResources(resources);
   }
 
-  // Remove empty images directory
-  if (imgIndex === 0) {
-    fs.rmdirSync(imagesDir);
-  }
-
   return { pageId, pageNumber: pageNum, text, imagePath };
 }
 
 async function extractPages(options: {
   pdfPath: string;
-  extractDir: string;
+  imagesDir: string;
   label: string;
   startPage?: number;
   endPage?: number;
   onProgress: (progress: PageProgress) => void;
 }): Promise<Page[]> {
   const doc = openPdf(options.pdfPath);
-  writePdfMetadata(doc, options.label, options.extractDir);
+  fs.mkdirSync(options.imagesDir, { recursive: true });
+  writePdfMetadata(doc, options.label);
   const totalPages = doc.countPages();
   const start = (options.startPage ?? 1) - 1;
   const end = Math.min(options.endPage ?? totalPages, totalPages);
@@ -206,7 +190,7 @@ async function extractPages(options: {
   const pages: Page[] = [];
 
   for (let i = start; i < end; i++) {
-    const page = extractPage(doc, i, options.label, options.extractDir);
+    const page = extractPage(doc, i, options.label, options.imagesDir);
     pages.push(page);
     options.onProgress({ page: i - start + 1, totalPages: rangeSize, label: options.label });
     await tick();
@@ -218,11 +202,11 @@ async function extractPages(options: {
 export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
   name: "pages",
   isComplete: (ctx) => {
-    const pagesDir = path.resolve(ctx.outputRoot, ctx.label, "extract", "pages");
+    const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
     const startPage = ctx.config.start_page ?? 1;
     const firstPageId = "pg" + String(startPage).padStart(3, "0");
-    if (!fs.existsSync(path.join(pagesDir, firstPageId, "page.png"))) return null;
-    const allPages = readPagesFromDisk(ctx.label, pagesDir);
+    if (!fs.existsSync(path.join(imagesDir, `${firstPageId}_page.png`))) return null;
+    const allPages = readPagesFromDisk(ctx.label, imagesDir);
     const endPage = ctx.config.end_page ?? Infinity;
     return allPages.filter((p) => p.pageNumber >= startPage && p.pageNumber <= endPage);
   },
@@ -237,7 +221,7 @@ export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
         try {
           const pages = await extractPages({
             pdfPath,
-            extractDir: path.resolve(ctx.outputRoot, ctx.label, "extract"),
+            imagesDir: path.resolve(ctx.outputRoot, ctx.label, "images"),
             label: ctx.label,
             startPage: ctx.config.start_page,
             endPage: ctx.config.end_page,
@@ -266,7 +250,7 @@ export function extract(
       try {
         await extractPages({
           pdfPath,
-          extractDir: path.resolve(outputRoot, label, "extract"),
+          imagesDir: path.resolve(outputRoot, label, "images"),
           label,
           startPage: options?.startPage,
           endPage: options?.endPage,

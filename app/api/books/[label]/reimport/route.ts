@@ -61,10 +61,9 @@ export async function POST(
 
   // Delete pipeline output directories, keep config.yaml and PDF
   const dirsToDelete = [
-    paths.extractDir,
+    paths.imagesDir,
     paths.metadataDir,
     paths.textClassificationDir,
-    paths.imageClassificationDir,
     paths.pageSectioningDir,
     paths.webRenderingDir,
   ];

@@ -33,6 +33,7 @@ import {
   getTextGroupTypes,
 } from "@/lib/config";
 
+import { resolveBookPaths } from "@/lib/pipeline/types";
 import { createContext, resolveModel } from "@/lib/pipeline/node";
 import type { LLMProvider } from "@/lib/pipeline/node";
 import {
@@ -425,25 +426,25 @@ export async function runPageSectioning(
 // ---------------------------------------------------------------------------
 
 export function runImageClassification(label: string, pageId: string) {
-  const { config } = resolveCtx(label);
+  const { config, booksRoot } = resolveCtx(label);
   const sizeFilter = getImageFilters(config).size;
 
-  const pageImagePath = resolvePageImagePath(label, pageId);
-  const pagesDir = path.dirname(pageImagePath);
-  const imagesDir = path.join(pagesDir, "images");
+  const paths = resolveBookPaths(label, booksRoot);
+  const imagesDir = paths.imagesDir;
 
   const imageInputs: ImageInput[] = [];
   if (fs.existsSync(imagesDir)) {
+    const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`, "i");
     const imageFiles = fs
       .readdirSync(imagesDir)
-      .filter((f) => /\.png$/i.test(f))
+      .filter((f) => re.test(f))
       .sort();
     for (const imgFile of imageFiles) {
       const imageId = imgFile.replace(/\.png$/i, "");
       const buf = fs.readFileSync(path.join(imagesDir, imgFile));
       imageInputs.push({
         image_id: imageId,
-        path: `extract/pages/${pageId}/images/${imgFile}`,
+        path: `images/${imgFile}`,
         buf,
       });
     }
@@ -452,11 +453,12 @@ export function runImageClassification(label: string, pageId: string) {
   const classification = classifyPageImages(imageInputs, sizeFilter);
 
   // Prepend full page image as a pruned entry (available for cropping)
+  const pageImagePath = path.join(imagesDir, `${pageId}_page.png`);
   if (fs.existsSync(pageImagePath)) {
     const pageBuf = fs.readFileSync(pageImagePath);
     classification.images.unshift({
       image_id: `${pageId}_im000`,
-      path: `extract/pages/${pageId}/page.png`,
+      path: `images/${pageId}_page.png`,
       width: pageBuf.readUInt32BE(16),
       height: pageBuf.readUInt32BE(20),
       is_pruned: true,

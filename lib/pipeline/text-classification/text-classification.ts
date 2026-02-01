@@ -38,9 +38,9 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
     const files = fs.readdirSync(dir).filter((f) => /^pg\d{3}\.json$/.test(f));
     if (files.length === 0) return null;
     // Check that every extracted page has a corresponding text-classification result
-    const pagesDir = path.resolve(ctx.outputRoot, ctx.label, "extract", "pages");
-    if (fs.existsSync(pagesDir)) {
-      const pageCount = fs.readdirSync(pagesDir).filter((d) => /^pg\d{3}$/.test(d)).length;
+    const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
+    if (fs.existsSync(imagesDir)) {
+      const pageCount = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
       if (files.length < pageCount) return null;
     }
     return files.sort().map((f) =>
