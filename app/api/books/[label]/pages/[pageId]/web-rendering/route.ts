@@ -139,6 +139,21 @@ export async function POST(
     );
   }
 
+  // If all sections were pruned/empty, write a stub so we can tell rendering was run
+  if (sectionRenderings.length === 0) {
+    const stub: SectionRendering = {
+      section_index: 0,
+      section_type: "empty",
+      html: "",
+      reasoning: "All sections on this page are pruned — nothing to render.",
+    };
+    sectionRenderings.push(stub);
+    fs.writeFileSync(
+      path.join(renderingDir, `${pageId}_s000.json`),
+      JSON.stringify(stub, null, 2) + "\n"
+    );
+  }
+
   // Clean up old versioned files, .current files, and legacy page-level file
   for (const f of fs.readdirSync(renderingDir)) {
     if (
@@ -149,7 +164,9 @@ export async function POST(
       // Legacy page-level files
       f === `${pageId}.json` ||
       new RegExp(`^${pageId}\\.v\\d{3}\\.json$`).test(f) ||
-      f === `${pageId}.current`
+      f === `${pageId}.current` ||
+      // Old marker files
+      f === `${pageId}.rendered`
     ) {
       fs.unlinkSync(path.join(renderingDir, f));
     }

@@ -1,17 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function LightboxImage({
   src,
   alt,
   className,
+  showDimensions,
 }: {
   src: string;
   alt: string;
   className?: string;
+  showDimensions?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -24,15 +28,42 @@ export function LightboxImage({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  // Catch images that loaded before hydration
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setDims({ w: img.naturalWidth, h: img.naturalHeight });
+    }
+  }, []);
+
+  const imgEl = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={imgRef}
+      src={src}
+      alt={alt}
+      className={`cursor-pointer ${className ?? ""}`}
+      onClick={() => setOpen(true)}
+      onLoad={(e) => {
+        const img = e.currentTarget;
+        setDims({ w: img.naturalWidth, h: img.naturalHeight });
+      }}
+    />
+  );
+
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className={`cursor-pointer ${className ?? ""}`}
-        onClick={() => setOpen(true)}
-      />
+      {showDimensions ? (
+        <div>
+          {imgEl}
+          {dims && (
+            <div className="flex items-center justify-between rounded-b border border-t-0 border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
+              <span>{dims.w}&times;{dims.h}</span>
+              <span>{alt}</span>
+            </div>
+          )}
+        </div>
+      ) : imgEl}
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"

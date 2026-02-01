@@ -18,7 +18,7 @@ export default async function BookLayout({
       <aside className="sticky top-0 h-screen w-52 shrink-0 self-start overflow-y-auto bg-slate-900 px-4 py-6">
         <BookSidebar label={label} title={metadata.title ?? label} />
       </aside>
-      <main className="min-w-0 flex-1 px-8 py-6">{children}</main>
+      <main className="min-w-0 flex-1 py-6 pl-6 pr-7">{children}</main>
     </div>
   );
 }

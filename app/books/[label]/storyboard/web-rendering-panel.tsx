@@ -70,15 +70,15 @@ new ResizeObserver(function() {
 
 function SandboxedSection({
   srcDoc,
-  id,
   onHeightChange,
+  initialHeight,
 }: {
   srcDoc: string;
-  id: string;
   onHeightChange?: (height: number) => void;
+  initialHeight?: number;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(0);
+  const [height, setHeight] = useState(initialHeight ?? 0);
 
   const onMessage = useCallback(
     (e: MessageEvent) => {
@@ -101,7 +101,6 @@ function SandboxedSection({
   return (
     <iframe
       ref={iframeRef}
-      key={id}
       srcDoc={srcDoc}
       sandbox="allow-scripts"
       scrolling="no"
@@ -200,6 +199,16 @@ function SectionCard({
     }
   }
 
+  if (!section.html) {
+    return (
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-2 bg-surface/30">
+          <p className="text-xs italic text-muted">{section.reasoning || "Empty section"}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       <div className="flex items-center px-4 py-2 bg-surface/30">
@@ -272,9 +281,9 @@ function SectionCard({
           </button>
         )}
         <SandboxedSection
-          id={`${pageId}-s${section.section_index}-v${version}`}
           srcDoc={buildSrcDoc(section.html, label, pageId)}
           onHeightChange={onHeightChange}
+          initialHeight={iframeHeight}
         />
         {isEditing && (
           <>
@@ -387,8 +396,6 @@ export function WebRenderingPanel({
     }
   }
 
-  const hasRendering = initialSections !== null && initialSections.length > 0;
-
   return (
     <div>
       {/* Header bar */}
@@ -403,7 +410,7 @@ export function WebRenderingPanel({
           onClick={handleRerun}
           disabled={loading}
           className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-slate-600 disabled:opacity-50 transition-colors"
-          title={hasRendering ? "Rerun web rendering" : "Run web rendering"}
+          title={initialSections ? "Rerun web rendering" : "Run web rendering"}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -421,16 +428,15 @@ export function WebRenderingPanel({
         </div>
       </div>
 
-      {hasRendering ? (
+      {initialSections === null ? (
+        <p className="p-4 text-sm italic text-muted">
+          No web rendering yet. Click the refresh button to run rendering.
+        </p>
+      ) : (
         <div className="space-y-4 p-4">
-          {sections.length === 0 && (
-            <p className="text-sm italic text-muted">
-              No rendered sections for this page.
-            </p>
-          )}
           {sections.map((section) => (
             <SectionCard
-              key={`${section.section_index}-${section.version}`}
+              key={section.section_index}
               section={section}
               label={label}
               pageId={pageId}
@@ -472,10 +478,6 @@ export function WebRenderingPanel({
             />
           ))}
         </div>
-      ) : (
-        <p className="p-4 text-sm italic text-muted">
-          No web rendering yet. Click the refresh button to run rendering.
-        </p>
       )}
     </div>
   );

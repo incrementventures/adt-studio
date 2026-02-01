@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PageSectioning } from "@/lib/books";
 import { TEXT_TYPE_COLORS } from "../extract/text-type-badge";
+import { LightboxImage } from "../extract/image-lightbox";
 
 interface TextEntry {
   text_type: string;
@@ -169,61 +170,80 @@ export function SectionsPanel({
                   )}
                 </div>
 
-                {/* Section content — parts in order */}
+                {/* Section content — parts in order, consecutive images grouped */}
                 <div className="space-y-3 px-4 pb-4">
                   {section.part_ids.length === 0 && (
                     <p className="text-sm italic text-faint">
                       No parts assigned to this section.
                     </p>
                   )}
-                  {section.part_ids.map((partId) => {
-                    const group = groupLookup.get(partId);
-                    if (group) {
-                      return (
-                        <div key={partId} className="rounded border border-border bg-background p-3">
-                          <div className="mb-1.5 flex items-center justify-between">
-                            <span className="text-xs font-medium uppercase tracking-wider text-faint">
-                              {group.group_type}
-                            </span>
-                            <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
-                              {partId}
-                            </span>
-                          </div>
-                          <div className="space-y-1.5">
-                            {group.texts.map((entry, ti) => (
-                              <div
-                                key={ti}
-                                className={`flex items-start justify-between gap-3${entry.is_pruned ? " opacity-40 line-through" : ""}`}
-                              >
-                                <span className="flex-1 font-mono text-xs whitespace-pre-wrap">
-                                  {entry.text}
-                                </span>
-                                <span
-                                  className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor(entry.text_type)}`}
+                  {(() => {
+                    // Group consecutive image parts together
+                    const chunks: { type: "text"; partId: string; group: { group_type: string; texts: TextEntry[] } }[]
+                      | { type: "images"; partIds: string[] }[] = [];
+                    const result: ({ type: "text"; partId: string; group: { group_type: string; texts: TextEntry[] } }
+                      | { type: "images"; partIds: string[] })[] = [];
+                    for (const partId of section.part_ids) {
+                      const group = groupLookup.get(partId);
+                      if (group) {
+                        result.push({ type: "text", partId, group });
+                      } else {
+                        const last = result[result.length - 1];
+                        if (last && last.type === "images") {
+                          last.partIds.push(partId);
+                        } else {
+                          result.push({ type: "images", partIds: [partId] });
+                        }
+                      }
+                    }
+                    return result.map((chunk) => {
+                      if (chunk.type === "text") {
+                        return (
+                          <div key={chunk.partId} className="rounded border border-border bg-background p-3">
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className="text-xs font-medium uppercase tracking-wider text-faint">
+                                {chunk.group.group_type}
+                              </span>
+                              <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
+                                {chunk.partId}
+                              </span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {chunk.group.texts.map((entry, ti) => (
+                                <div
+                                  key={ti}
+                                  className={`flex items-start justify-between gap-3${entry.is_pruned ? " opacity-40 line-through" : ""}`}
                                 >
-                                  {entry.text_type}
-                                </span>
-                              </div>
-                            ))}
+                                  <span className="flex-1 font-mono text-xs whitespace-pre-wrap">
+                                    {entry.text}
+                                  </span>
+                                  <span
+                                    className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor(entry.text_type)}`}
+                                  >
+                                    {entry.text_type}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
+                        );
+                      }
+                      return (
+                        <div key={chunk.partIds[0]} className="flex flex-wrap gap-2">
+                          {chunk.partIds.map((partId) => (
+                            <div key={partId} className="w-40">
+                              <LightboxImage
+                                src={`/api/books/${label}/pages/${pageId}/images/${partId}?v=${sectioning?.image_classification_version ?? ""}`}
+                                alt={partId}
+                                className="w-full rounded-t border border-border"
+                                showDimensions
+                              />
+                            </div>
+                          ))}
                         </div>
                       );
-                    }
-                    // Image part
-                    return (
-                      <div key={partId} className="max-w-xs">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={`/api/books/${label}/pages/${pageId}/images/${partId}?v=${sectioning?.image_classification_version ?? ""}`}
-                          alt={partId}
-                          className="w-full rounded-t border border-border"
-                        />
-                        <div className="rounded-b border border-t-0 border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                          {partId}
-                        </div>
-                      </div>
-                    );
-                  })}
+                    });
+                  })()}
                 </div>
               </div>
             );

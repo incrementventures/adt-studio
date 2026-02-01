@@ -481,6 +481,7 @@ export function getWebRendering(
     const m = sectionRe.exec(f);
     if (m) sectionIds.push(`${pageId}_s${m[1]}`);
   }
+
   if (sectionIds.length === 0) return null;
 
   sectionIds.sort();
