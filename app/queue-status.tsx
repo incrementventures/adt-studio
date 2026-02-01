@@ -78,7 +78,7 @@ export default function QueueStatus() {
   return (
     <div
       ref={containerRef}
-      className="fixed top-4 right-4 z-50"
+      className="fixed top-2.5 right-4 z-50"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -94,36 +94,46 @@ export default function QueueStatus() {
         </span>
       </div>
 
-      {hovered && sortedJobs.length > 0 && (
-        <div className="mt-2 w-72 max-h-80 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-lg shadow-black/40">
-          <div className="px-3 py-2 text-xs font-semibold text-slate-400 border-b border-slate-700">
-            Active Jobs
-          </div>
-          {sortedJobs.map((job) => (
-            <div
-              key={job.id}
-              className="flex items-center gap-2 border-b border-slate-800 px-3 py-1.5 last:border-b-0"
-            >
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  job.status === "running" ? "bg-green-500" : "bg-yellow-500"
-                }`}
-              />
-              <span className="truncate text-xs font-medium text-slate-200">
-                {job.label}
-              </span>
-              <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-500">
-                {formatJobType(job)}
-              </span>
-              {job.progress && (
-                <span className="ml-auto shrink-0 text-[11px] text-slate-500">
-                  {job.progress}
-                </span>
-              )}
+      {hovered && sortedJobs.length > 0 && (() => {
+        const maxVisible = 18;
+        const visible = sortedJobs.slice(0, maxVisible);
+        const remaining = sortedJobs.length - visible.length;
+        return (
+          <div className="mt-2 w-72 rounded-lg border border-slate-700 bg-slate-900 shadow-lg shadow-black/40">
+            <div className="px-3 py-2 text-xs font-semibold text-slate-400 border-b border-slate-700">
+              Active Jobs
             </div>
-          ))}
-        </div>
-      )}
+            {visible.map((job) => (
+              <div
+                key={job.id}
+                className="flex items-center gap-2 border-b border-slate-800 px-3 py-1.5 last:border-b-0"
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    job.status === "running" ? "bg-green-500" : "bg-yellow-500"
+                  }`}
+                />
+                <span className="truncate text-xs font-medium text-slate-200">
+                  {job.label}
+                </span>
+                <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-500">
+                  {formatJobType(job)}
+                </span>
+                {job.progress && (
+                  <span className="ml-auto shrink-0 text-[11px] text-slate-500">
+                    {job.progress}
+                  </span>
+                )}
+              </div>
+            ))}
+            {remaining > 0 && (
+              <div className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-700">
+                {remaining} more queued
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
