@@ -1,0 +1,27 @@
+{
+  "reasoning": "The page contains a single narrative sentence set as large text on the right side, and a page number centered at the bottom. No header/footer text is present besides the page number.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "\"Please could I hold onto your tail as you fly up?\" asked Hyena as Raven flew up into the sky.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg005_gp001"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "4",
+          "is_pruned": true
+        }
+      ],
+      "group_id": "pg005_gp002"
+    }
+  ]
+}

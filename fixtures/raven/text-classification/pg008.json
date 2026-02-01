@@ -1,0 +1,32 @@
+{
+  "reasoning": "The page contains a single narrative text block on the right and a page number centered at the bottom. No additional captions or headers are visible.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Raven's feathers could not hold Hyena anymore.",
+          "is_pruned": false
+        },
+        {
+          "text_type": "section_text",
+          "text": "Hyena jumped thinking that the cloud would hold him, but it didn't!",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg008_gp001"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "7",
+          "is_pruned": true
+        }
+      ],
+      "group_id": "pg008_gp002"
+    }
+  ]
+}

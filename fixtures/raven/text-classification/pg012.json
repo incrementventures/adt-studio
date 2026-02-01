@@ -1,0 +1,89 @@
+{
+  "reasoning": "Extracted all visible text in reading order: top instruction line, centered attribution/metadata block, and bottom logos/text. Classified title, credits, metadata, and image-associated logo text separately.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "instruction_text",
+          "text": "You are free to download, copy, translate or adapt this story and use the illustrations as long as you attribute in the following way:",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg012_gp001"
+    },
+    {
+      "group_type": "heading",
+      "texts": [
+        {
+          "text_type": "book_title",
+          "text": "Hyena and Raven",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg012_gp002"
+    },
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "book_author",
+          "text": "Author - Ann Nduku",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Adaptation - Tony Lelliott",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Illustration - Wiehan de Jager",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Language - English",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Level - First sentences",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "© African Storybook Initiative 2014",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Creative Commons: Attribution 4.0",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Source www.africanstorybook.org",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg012_gp003"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "image_associated_text",
+          "text": "African Storybook.org",
+          "is_pruned": false
+        },
+        {
+          "text_type": "image_associated_text",
+          "text": "Saide",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg012_gp004"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "reasoning": "Identify all visible text on the cover-style page: title and author/illustrator names in the top-right orange panel; language label at bottom-left; publisher/site mark at bottom-right. No page number visible.",
+  "groups": [
+    {
+      "group_type": "heading",
+      "texts": [
+        {
+          "text_type": "book_title",
+          "text": "Hyena and Raven",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_author",
+          "text": "Tony Lelliott",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_author",
+          "text": "Wiehan de Jager",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg001_gp001"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "book_metadata",
+          "text": "English",
+          "is_pruned": false
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "African Storybook.org",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg001_gp002"
+    }
+  ]
+}

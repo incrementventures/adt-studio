@@ -1,0 +1,73 @@
+{
+  "reasoning": "Extracted all visible text in reading order: top instruction line, centered attribution/metadata block, and bottom logos/text. Classified title, credits, metadata, and image-associated logo text separately.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "instruction_text",
+          "text": "You are free to download, copy, translate or adapt this story and use the illustrations as long as you attribute in the following way:"
+        }
+      ]
+    },
+    {
+      "group_type": "heading",
+      "texts": [
+        {
+          "text_type": "book_title",
+          "text": "Hyena and Raven"
+        }
+      ]
+    },
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "book_author",
+          "text": "Author - Ann Nduku"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Adaptation - Tony Lelliott"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Illustration - Wiehan de Jager"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Language - English"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Level - First sentences"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "© African Storybook Initiative 2014"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Creative Commons: Attribution 4.0"
+        },
+        {
+          "text_type": "book_metadata",
+          "text": "Source www.africanstorybook.org"
+        }
+      ]
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "image_associated_text",
+          "text": "African Storybook.org"
+        },
+        {
+          "text_type": "image_associated_text",
+          "text": "Saide"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "reasoning": "Extracted the single narrative sentence shown at upper right and the centered page number at the bottom. No other visible text on the illustration.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "One day Hyena said to his friend, \"I would love to fly into the sky with you.\""
+        }
+      ]
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "2"
+        }
+      ]
+    }
+  ]
+}

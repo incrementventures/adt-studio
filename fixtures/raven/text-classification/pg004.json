@@ -1,0 +1,32 @@
+{
+  "reasoning": "Identified one main body text block on the right side and a page number at the bottom. No header or additional captions/labels appear on the illustration.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Raven gave Hyena some feathers, which he made into wings.",
+          "is_pruned": false
+        },
+        {
+          "text_type": "section_text",
+          "text": "But Hyena was too heavy and couldn't fly.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg004_gp001"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "3",
+          "is_pruned": true
+        }
+      ],
+      "group_id": "pg004_gp002"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "reasoning": "Extracted all visible text in reading order; main story text is set as narrative sentences; page number at bottom.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Raven flew and flew until he was very tired."
+        }
+      ]
+    },
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "But Hyena said, \"Just a little further, my friend!\""
+        }
+      ]
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "5"
+        }
+      ]
+    }
+  ]
+}

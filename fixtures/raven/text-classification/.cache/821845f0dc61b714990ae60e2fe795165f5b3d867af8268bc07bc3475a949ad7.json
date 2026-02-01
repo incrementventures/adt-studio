@@ -1,0 +1,32 @@
+{
+  "reasoning": "The page contains one illustration on the left and narrative text on the right, plus a page number at the bottom. No additional captions or headers are visible.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Hyena crashed into the ground below."
+        }
+      ]
+    },
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "He woke up with broken legs and grazes all over his body."
+        }
+      ]
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "9"
+        }
+      ]
+    }
+  ]
+}

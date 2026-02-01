@@ -1,0 +1,27 @@
+{
+  "reasoning": "Single illustrated page with narrative text on the right and a page number centered at the bottom. No header or other metadata visible.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Suddenly, Hyena felt a jerk."
+        },
+        {
+          "text_type": "section_text",
+          "text": "Raven's tail feathers came off in his hand!"
+        }
+      ]
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "6"
+        }
+      ]
+    }
+  ]
+}

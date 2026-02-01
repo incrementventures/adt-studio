@@ -1,0 +1,32 @@
+{
+  "reasoning": "The page contains two short narrative sentences on the right side and a page number centered at the bottom. No header/footer text besides the page number is visible.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Hyena and Raven were once great friends.",
+          "is_pruned": false
+        },
+        {
+          "text_type": "section_text",
+          "text": "They played together all the time.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg002_gp001"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "1",
+          "is_pruned": true
+        }
+      ],
+      "group_id": "pg002_gp002"
+    }
+  ]
+}

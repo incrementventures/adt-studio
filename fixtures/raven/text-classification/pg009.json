@@ -1,0 +1,48 @@
+{
+  "reasoning": "Extracted all visible text: the two narrative paragraphs on the right and the centered page number at the bottom.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "By now he was falling fast.",
+          "is_pruned": false
+        },
+        {
+          "text_type": "section_text",
+          "text": "\"Help!\" he shouted.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg009_gp001"
+    },
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "But no one could hear him.",
+          "is_pruned": false
+        },
+        {
+          "text_type": "section_text",
+          "text": "Raven was flying high above.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg009_gp002"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "8",
+          "is_pruned": true
+        }
+      ],
+      "group_id": "pg009_gp003"
+    }
+  ]
+}

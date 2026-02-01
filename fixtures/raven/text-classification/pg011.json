@@ -1,0 +1,38 @@
+{
+  "reasoning": "The page contains two short narrative paragraphs on the right side and a page number centered at the bottom. No other visible text appears within the illustration.",
+  "groups": [
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "Ever since then, Hyena limps and he has marks on his body.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg011_gp001"
+    },
+    {
+      "group_type": "paragraph",
+      "texts": [
+        {
+          "text_type": "section_text",
+          "text": "He and Raven are not friends anymore.",
+          "is_pruned": false
+        }
+      ],
+      "group_id": "pg011_gp002"
+    },
+    {
+      "group_type": "other",
+      "texts": [
+        {
+          "text_type": "page_number",
+          "text": "10",
+          "is_pruned": true
+        }
+      ],
+      "group_id": "pg011_gp003"
+    }
+  ]
+}

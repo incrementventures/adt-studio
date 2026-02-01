@@ -24,7 +24,6 @@ adt-press
 
 # pipeline output
 /books
-/fixtures
 
 # misc
 .DS_Store
