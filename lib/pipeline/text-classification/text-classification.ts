@@ -16,6 +16,7 @@ import {
   type Node,
 } from "../node";
 import { pagesNode, type Page } from "../extract/extract";
+import { countPages } from "../../books";
 import { metadataNode } from "../metadata/metadata";
 import type { BookMetadata } from "../metadata/metadata-schema";
 
@@ -37,12 +38,8 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
     if (!fs.existsSync(dir)) return null;
     const files = fs.readdirSync(dir).filter((f) => /^pg\d{3}\.json$/.test(f));
     if (files.length === 0) return null;
-    // Check that every extracted page has a corresponding text-classification result
-    const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
-    if (fs.existsSync(imagesDir)) {
-      const pageCount = fs.readdirSync(imagesDir).filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
-      if (files.length < pageCount) return null;
-    }
+    const pageCount = countPages(ctx.label);
+    if (pageCount > 0 && files.length < pageCount) return null;
     return files.sort().map((f) =>
       JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8"))
     );

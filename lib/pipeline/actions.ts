@@ -15,6 +15,7 @@ import {
   getTextClassification,
   getImageClassification,
   getPageSectioning,
+  getExtractedImages,
   loadUnprunedImages,
   resolvePageImagePath,
   getPage,
@@ -430,30 +431,23 @@ export function runImageClassification(label: string, pageId: string) {
   const sizeFilter = getImageFilters(config).size;
 
   const paths = resolveBookPaths(label, booksRoot);
-  const imagesDir = paths.imagesDir;
 
   const imageInputs: ImageInput[] = [];
-  if (fs.existsSync(imagesDir)) {
-    const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`, "i");
-    const imageFiles = fs
-      .readdirSync(imagesDir)
-      .filter((f) => re.test(f))
-      .sort();
-    for (const imgFile of imageFiles) {
-      const imageId = imgFile.replace(/\.png$/i, "");
-      const buf = fs.readFileSync(path.join(imagesDir, imgFile));
-      imageInputs.push({
-        image_id: imageId,
-        path: `images/${imgFile}`,
-        buf,
-      });
-    }
+  for (const row of getExtractedImages(label, pageId)) {
+    const absPath = path.join(paths.bookDir, row.path);
+    if (!fs.existsSync(absPath)) continue;
+    const buf = fs.readFileSync(absPath);
+    imageInputs.push({
+      image_id: row.image_id,
+      path: row.path,
+      buf,
+    });
   }
 
   const classification = classifyPageImages(imageInputs, sizeFilter);
 
   // Prepend full page image as a pruned entry (available for cropping)
-  const pageImagePath = path.join(imagesDir, `${pageId}_page.png`);
+  const pageImagePath = path.join(paths.imagesDir, `${pageId}_page.png`);
   if (fs.existsSync(pageImagePath)) {
     const pageBuf = fs.readFileSync(pageImagePath);
     classification.images.unshift({

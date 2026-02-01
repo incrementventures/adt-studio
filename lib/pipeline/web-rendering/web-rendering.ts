@@ -15,7 +15,7 @@ import { pagesNode } from "../extract/extract";
 import { textClassificationNode } from "../text-classification/text-classification";
 import { imageClassificationNode } from "../image-classification/image-classification";
 import { sectionsNode } from "../page-sectioning/page-sectioning";
-import { loadUnprunedImagesFromDir } from "../../books";
+import { loadUnprunedImagesFromDir, countPages } from "../../books";
 import type { PageTextClassification } from "../text-classification/text-classification-schema";
 import { renderSection, type RenderSectionText, type RenderSectionImage } from "./render-section";
 
@@ -41,13 +41,8 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
       .readdirSync(dir)
       .filter((f) => /^pg\d{3}\.json$/.test(f));
     if (files.length === 0) return null;
-    const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
-    if (fs.existsSync(imagesDir)) {
-      const pageCount = fs
-        .readdirSync(imagesDir)
-        .filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
-      if (files.length < pageCount) return null;
-    }
+    const pageCount = countPages(ctx.label);
+    if (pageCount > 0 && files.length < pageCount) return null;
     return files
       .sort()
       .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
@@ -96,10 +91,10 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
 
               // Load extracted images for resolving part_ids to base64
               const bookDir = path.resolve(ctx.outputRoot, ctx.label);
-              const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
               const allImagesForPage = loadUnprunedImagesFromDir(
+                ctx.label,
+                p.pageId,
                 bookDir,
-                imagesDir,
                 allImageClassifications[i],
               );
               const imageMap = new Map(

@@ -147,6 +147,30 @@ export function putImage(
   ).run(imageId, pageId, imagePath, hash, width, height, source);
 }
 
+export function getExtractedImages(
+  label: string,
+  pageId: string
+): { image_id: string; path: string }[] {
+  const db = getDb(label);
+  return db
+    .prepare(
+      "SELECT image_id, path FROM images WHERE page_id = ? AND source = 'extract' ORDER BY image_id"
+    )
+    .all(pageId) as { image_id: string; path: string }[];
+}
+
+export function getMaxImageNum(label: string, pageId: string): number {
+  const db = getDb(label);
+  const row = db
+    .prepare(
+      "SELECT image_id FROM images WHERE page_id = ? AND image_id LIKE ? || '_im%' ORDER BY image_id DESC LIMIT 1"
+    )
+    .get(pageId, pageId) as { image_id: string } | undefined;
+  if (!row) return 0;
+  const m = /^pg\d{3}_im(\d{3})$/.exec(row.image_id);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 export function getImageByHash(label: string, hash: string): string | null {
   const db = getDb(label);
   const row = db
@@ -429,21 +453,12 @@ export function loadUnprunedImages(
       images.push({ image_id: entry.image_id, imageBase64: imgBase64 });
     }
   } else {
-    // Fallback: scan images dir for extracted images
-    const imagesDir = paths.imagesDir;
-    if (fs.existsSync(imagesDir)) {
-      const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`, "i");
-      const imageFiles = fs
-        .readdirSync(imagesDir)
-        .filter((f) => re.test(f))
-        .sort();
-      for (const imgFile of imageFiles) {
-        const imageId = imgFile.replace(/\.png$/i, "");
-        const imgBase64 = fs
-          .readFileSync(path.join(imagesDir, imgFile))
-          .toString("base64");
-        images.push({ image_id: imageId, imageBase64: imgBase64 });
-      }
+    // Fallback: use DB extract-source images
+    for (const row of getExtractedImages(label, pageId)) {
+      const filePath = path.join(paths.bookDir, row.path);
+      if (!fs.existsSync(filePath)) continue;
+      const imgBase64 = fs.readFileSync(filePath).toString("base64");
+      images.push({ image_id: row.image_id, imageBase64: imgBase64 });
     }
   }
 
@@ -451,8 +466,9 @@ export function loadUnprunedImages(
 }
 
 export function loadUnprunedImagesFromDir(
+  label: string,
+  pageId: string,
   bookDir: string,
-  imagesDir: string,
   imageClassification?: PageImageClassification | null
 ): { image_id: string; imageBase64: string }[] {
   const images: { image_id: string; imageBase64: string }[] = [];
@@ -465,17 +481,12 @@ export function loadUnprunedImagesFromDir(
       const imgBase64 = fs.readFileSync(filePath).toString("base64");
       images.push({ image_id: entry.image_id, imageBase64: imgBase64 });
     }
-  } else if (fs.existsSync(imagesDir)) {
-    const imageFiles = fs
-      .readdirSync(imagesDir)
-      .filter((f) => /^pg\d{3}_im\d{3}\.png$/i.test(f))
-      .sort();
-    for (const imgFile of imageFiles) {
-      const imageId = imgFile.replace(/\.png$/i, "");
-      const imgBase64 = fs
-        .readFileSync(path.join(imagesDir, imgFile))
-        .toString("base64");
-      images.push({ image_id: imageId, imageBase64: imgBase64 });
+  } else {
+    for (const row of getExtractedImages(label, pageId)) {
+      const filePath = path.join(bookDir, row.path);
+      if (!fs.existsSync(filePath)) continue;
+      const imgBase64 = fs.readFileSync(filePath).toString("base64");
+      images.push({ image_id: row.image_id, imageBase64: imgBase64 });
     }
   }
 
@@ -584,7 +595,7 @@ export function getLlmLog(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function countPages(label: string): number {
+export function countPages(label: string): number {
   const db = getDb(label);
   const row = db
     .prepare("SELECT COUNT(*) as count FROM pages")

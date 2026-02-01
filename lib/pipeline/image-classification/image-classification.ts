@@ -12,6 +12,7 @@ import {
   type Node,
 } from "../node";
 import { pagesNode, type Page } from "../extract/extract";
+import { getExtractedImages, countPages } from "../../books";
 
 const DEFAULT_CONCURRENCY = 5;
 
@@ -36,13 +37,8 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
         .readdirSync(dir)
         .filter((f) => /^pg\d{3}\.json$/.test(f));
       if (files.length === 0) return null;
-      const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
-      if (fs.existsSync(imagesDir)) {
-        const pageCount = fs
-          .readdirSync(imagesDir)
-          .filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
-        if (files.length < pageCount) return null;
-      }
+      const pageCount = countPages(ctx.label);
+      if (pageCount > 0 && files.length < pageCount) return null;
       return files
         .sort()
         .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
@@ -79,23 +75,17 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
               const p = allPages[i];
 
               // Discover extracted images
-              const imagesDir = path.dirname(p.imagePath);
+              const bookDir = path.resolve(ctx.outputRoot, ctx.label);
               const imageInputs: ImageInput[] = [];
-              if (fs.existsSync(imagesDir)) {
-                const re = new RegExp(`^${p.pageId}_im\\d{3}\\.png$`, "i");
-                const imageFiles = fs
-                  .readdirSync(imagesDir)
-                  .filter((f) => re.test(f))
-                  .sort();
-                for (const imgFile of imageFiles) {
-                  const imageId = imgFile.replace(/\.png$/i, "");
-                  const buf = fs.readFileSync(path.join(imagesDir, imgFile));
-                  imageInputs.push({
-                    image_id: imageId,
-                    path: `images/${imgFile}`,
-                    buf,
-                  });
-                }
+              for (const row of getExtractedImages(ctx.label, p.pageId)) {
+                const absPath = path.join(bookDir, row.path);
+                if (!fs.existsSync(absPath)) continue;
+                const buf = fs.readFileSync(absPath);
+                imageInputs.push({
+                  image_id: row.image_id,
+                  path: row.path,
+                  buf,
+                });
               }
 
               const classification = classifyPageImages(

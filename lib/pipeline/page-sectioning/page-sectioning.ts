@@ -14,7 +14,7 @@ import {
 import { pagesNode } from "../extract/extract";
 import { textClassificationNode } from "../text-classification/text-classification";
 import { imageClassificationNode } from "../image-classification/image-classification";
-import { loadUnprunedImagesFromDir } from "../../books";
+import { loadUnprunedImagesFromDir, countPages } from "../../books";
 import { buildUnprunedGroupSummaries, type PageTextClassification } from "../text-classification/text-classification-schema";
 import { sectionPage } from "./section-page";
 
@@ -40,13 +40,8 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
       .readdirSync(dir)
       .filter((f) => /^pg\d{3}\.json$/.test(f));
     if (files.length === 0) return null;
-    const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
-    if (fs.existsSync(imagesDir)) {
-      const pageCount = fs
-        .readdirSync(imagesDir)
-        .filter((f) => /^pg\d{3}_page\.png$/.test(f)).length;
-      if (files.length < pageCount) return null;
-    }
+    const pageCount = countPages(ctx.label);
+    if (pageCount > 0 && files.length < pageCount) return null;
     return files
       .sort()
       .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8")));
@@ -105,10 +100,10 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
 
               // Load extracted images, filtering out pruned ones
               const bookDir = path.resolve(ctx.outputRoot, ctx.label);
-              const imagesDir = path.resolve(ctx.outputRoot, ctx.label, "images");
               const images = loadUnprunedImagesFromDir(
+                ctx.label,
+                p.pageId,
                 bookDir,
-                imagesDir,
                 allImageClassifications[i],
               );
 

@@ -5,6 +5,8 @@ import sharp from "sharp";
 import {
   getBooksRoot,
   getPage,
+  getExtractedImages,
+  getMaxImageNum,
   listImageClassificationVersions,
   getImageClassificationVersion,
   getLatestImageClassificationPath,
@@ -72,24 +74,17 @@ export async function POST(
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
 
-  // Discover extracted images from flat images/ dir
-  const imagesDir = paths.imagesDir;
+  // Discover extracted images from DB (excludes crops from prior classifications)
   const imageInputs: ImageInput[] = [];
-  if (fs.existsSync(imagesDir)) {
-    const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`, "i");
-    const imageFiles = fs
-      .readdirSync(imagesDir)
-      .filter((f) => re.test(f))
-      .sort();
-    for (const imgFile of imageFiles) {
-      const imageId = imgFile.replace(/\.png$/i, "");
-      const buf = fs.readFileSync(path.join(imagesDir, imgFile));
-      imageInputs.push({
-        image_id: imageId,
-        path: `images/${imgFile}`,
-        buf,
-      });
-    }
+  for (const row of getExtractedImages(label, pageId)) {
+    const absPath = path.join(paths.bookDir, row.path);
+    if (!fs.existsSync(absPath)) continue;
+    const buf = fs.readFileSync(absPath);
+    imageInputs.push({
+      image_id: row.image_id,
+      path: row.path,
+      buf,
+    });
   }
 
   const sizeFilter = getImageFilters(loadBookConfig(label)).size;
@@ -184,15 +179,7 @@ export async function PATCH(
   const imagesDir = paths.imagesDir;
   fs.mkdirSync(imagesDir, { recursive: true });
 
-  // Scan imagesDir for max _imNNN number
-  const imNumRe = new RegExp(`^${pageId}_im(\\d{3})\\.png$`);
-  let maxNum = 0;
-  if (fs.existsSync(imagesDir)) {
-    for (const f of fs.readdirSync(imagesDir)) {
-      const m = imNumRe.exec(f);
-      if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
-    }
-  }
+  let maxNum = getMaxImageNum(label, pageId);
 
   // Assign final IDs and generate crop files for entries with source_region
   for (const img of data.images) {
