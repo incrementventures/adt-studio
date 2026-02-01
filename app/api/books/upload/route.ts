@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
-import { getBooksRoot } from "@/lib/books";
+import { getBooksRoot, putBookMetadata } from "@/lib/books";
+import { getDb } from "@/lib/db";
 import { extract } from "@/lib/pipeline/extract/extract";
 import { queue } from "@/lib/queue";
 
@@ -76,6 +77,9 @@ export async function POST(request: Request) {
   if (endPage !== null) bookConfig.end_page = endPage;
   fs.writeFileSync(path.join(bookDir, "config.yaml"), yaml.dump(bookConfig));
 
+  // Ensure DB exists
+  getDb(label);
+
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
@@ -97,28 +101,16 @@ export async function POST(request: Request) {
       writer.close();
     },
     complete() {
-      // Write stub metadata to extract dir so the book appears in listBooks().
-      // The metadata node will later write real metadata to metadata/metadata.json.
-      const extractDir = path.join(bookDir, "extract");
-      const stubFile = path.join(extractDir, "pdf-metadata.json");
-      if (!fs.existsSync(stubFile)) {
-        const title = path.basename(file.name, ".pdf");
-        fs.writeFileSync(
-          stubFile,
-          JSON.stringify(
-            {
-              title,
-              authors: [],
-              publisher: null,
-              language_code: null,
-              cover_page_number: 1,
-              reasoning: "Auto-generated stub from PDF upload",
-            },
-            null,
-            2
-          )
-        );
-      }
+      // Write stub metadata to DB so the book appears in listBooks().
+      const title = path.basename(file.name, ".pdf");
+      putBookMetadata(label, "stub", {
+        title,
+        authors: [],
+        publisher: null,
+        language_code: null,
+        cover_page_number: 1,
+        reasoning: "Auto-generated stub from PDF upload",
+      });
       const jobId = queue.enqueue("metadata", label);
       write({ done: true, label, jobId });
       writer.close();

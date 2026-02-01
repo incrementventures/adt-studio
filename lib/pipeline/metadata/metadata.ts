@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { Observable } from "rxjs";
 import { cachedPromptGenerateObject } from "../cache";
 import { bookMetadataSchema, type BookMetadata } from "./metadata-schema";
@@ -14,6 +13,8 @@ import {
 } from "../node";
 import { pagesNode, type Page } from "../extract/extract";
 import { loadBookConfig } from "../../config";
+import { putBookMetadata } from "@/lib/books";
+import { getDb } from "@/lib/db";
 
 export type { LLMProvider } from "../node";
 
@@ -29,14 +30,15 @@ export const metadataNode: Node<BookMetadata> = defineNode<
 >({
   name: "metadata",
   isComplete: (ctx) => {
-    const metadataFile = path.resolve(
-      ctx.outputRoot,
-      ctx.label,
-      "metadata",
-      "metadata.json"
-    );
-    if (!fs.existsSync(metadataFile)) return null;
-    return JSON.parse(fs.readFileSync(metadataFile, "utf-8"));
+    // Only consider complete if LLM-generated metadata exists (not just the stub)
+    const db = getDb(ctx.label);
+    const row = db
+      .prepare("SELECT data FROM book_metadata WHERE source = 'llm'")
+      .get() as { data: string } | undefined;
+    if (!row) return null;
+    const raw = JSON.parse(row.data);
+    const result = bookMetadataSchema.safeParse(raw);
+    return result.success ? result.data : null;
   },
   resolve: (ctx) => {
     return new Observable<BookMetadata | MetadataProgress>((subscriber) => {
@@ -54,13 +56,6 @@ export const metadataNode: Node<BookMetadata> = defineNode<
 
           subscriber.next({ phase: "calling-llm", label: ctx.label });
 
-          const metadataDir = path.resolve(
-            ctx.outputRoot,
-            ctx.label,
-            "metadata"
-          );
-          const metadataFile = path.join(metadataDir, "metadata.json");
-
           const metadata = await cachedPromptGenerateObject<BookMetadata>({
             label: ctx.label,
             taskType: "metadata",
@@ -70,11 +65,7 @@ export const metadataNode: Node<BookMetadata> = defineNode<
             promptContext: { pages },
           });
 
-          fs.mkdirSync(metadataDir, { recursive: true });
-          fs.writeFileSync(
-            metadataFile,
-            JSON.stringify(metadata, null, 2) + "\n"
-          );
+          putBookMetadata(ctx.label, "llm", metadata);
 
           subscriber.next({ phase: "done", label: ctx.label });
           subscriber.next(metadata);

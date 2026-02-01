@@ -28,6 +28,7 @@ export function TextClassificationPanel({
   const router = useRouter();
   const [data, setData] = useState(initialData);
   const [version, setVersion] = useState(initialVersion);
+  const [latestVersion, setLatestVersion] = useState(initialVersion);
   const [versions, setVersions] = useState(initialAvailableVersions);
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -46,12 +47,13 @@ export function TextClassificationPanel({
     if (!isDirtyRef.current) {
       setData(initialData);
       setVersion(initialVersion);
+      setLatestVersion(initialVersion);
       setVersions(initialAvailableVersions);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, initialVersion, initialAvailableVersions]);
 
-  const versionLabel = version === 1 ? "original" : `v${version}`;
+  const versionLabel = `v${version}`;
 
   // Close version dropdown on outside click / escape
   useEffect(() => {
@@ -98,6 +100,7 @@ export function TextClassificationPanel({
             const { version: newVersion, ...rest } = job.result as { version: number } & PageTextClassification;
             setData(rest as PageTextClassification);
             setVersion(newVersion);
+            setLatestVersion(newVersion);
             setVersions([1]);
             setIsDirty(false);
             setRerunning(false);
@@ -125,7 +128,7 @@ export function TextClassificationPanel({
     <button
       type="button"
       onClick={handleRerun}
-      disabled={rerunning || pipelineBusy}
+      disabled={rerunning || pipelineBusy || isDirty}
       className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
       title={data ? "Rerun classification" : "Run classification"}
     >
@@ -177,7 +180,7 @@ export function TextClassificationPanel({
       const json = await res.json();
       setData(json.data as PageTextClassification);
       setVersion(v);
-      setIsDirty(false);
+      setIsDirty(v !== latestVersion);
     } catch {
       // ignore
     }
@@ -200,12 +203,13 @@ export function TextClassificationPanel({
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ version }),
+          body: JSON.stringify({ version: latestVersion }),
         }
       );
       if (!res.ok) return;
       const json = await res.json();
       setData(json.data as PageTextClassification);
+      setVersion(latestVersion);
     } catch {
       // ignore
     }
@@ -228,6 +232,7 @@ export function TextClassificationPanel({
       const { version: newVersion, ...rest } = json;
       const saved = rest as PageTextClassification;
       setVersion(newVersion);
+      setLatestVersion(newVersion);
       setData(saved);
       setIsDirty(false);
       setVersions((prev) =>
@@ -249,75 +254,74 @@ export function TextClassificationPanel({
         {rerunError && (
           <span className="text-xs font-normal text-red-200">{rerunError}</span>
         )}
-        {isDirty ? (
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={discardEdits}
-              disabled={saving}
-              className="cursor-pointer rounded bg-indigo-500 px-2 py-0.5 text-xs font-medium hover:bg-indigo-400 disabled:opacity-50 transition-colors"
-            >
-              Discard
-            </button>
-            <button
-              type="button"
-              onClick={saveChanges}
-              disabled={saving}
-              className="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-70 transition-colors"
-            >
-              {saving && (
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
-                </svg>
-              )}
-              Save
-            </button>
-          </div>
-        ) : (
-          <div className="ml-auto flex items-center gap-1.5">
-            <div ref={versionDropdownRef} className="relative">
+        <div className="ml-auto flex items-center gap-1.5">
+          {isDirty && (
+            <>
               <button
                 type="button"
-                onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
-                className="cursor-pointer rounded bg-indigo-500 px-1.5 py-0.5 text-xs font-medium hover:bg-indigo-400 transition-colors"
+                onClick={discardEdits}
+                disabled={saving}
+                className="cursor-pointer rounded bg-indigo-500 px-2 py-0.5 text-xs font-medium hover:bg-indigo-400 disabled:opacity-50 transition-colors"
               >
-                {versionLabel} ▾
+                Discard
               </button>
-              {versionDropdownOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-                  {versions.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => loadVersion(v)}
-                      className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
-                    >
-                      {v === 1 ? "original" : `v${v}`}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {rerunButton}
+              <button
+                type="button"
+                onClick={saveChanges}
+                disabled={saving}
+                className="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-70 transition-colors"
+              >
+                {saving && (
+                  <svg
+                    className="h-3 w-3 animate-spin"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                Save
+              </button>
+            </>
+          )}
+          <div ref={versionDropdownRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+              className="cursor-pointer rounded bg-indigo-500 px-1.5 py-0.5 text-xs font-medium hover:bg-indigo-400 transition-colors"
+            >
+              {versionLabel} ▾
+            </button>
+            {versionDropdownOpen && (
+              <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
+                {versions.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => loadVersion(v)}
+                    className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
+                  >
+                    {`v${v}`}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          {rerunButton}
+        </div>
       </div>
       <div key={`${version}-${isDirty}`} className="space-y-3 p-4">
         {data.groups.length === 0 && (

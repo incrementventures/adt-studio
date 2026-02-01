@@ -4,6 +4,9 @@ import mupdf, { type Document as MupdfDocument } from "mupdf";
 import { Observable } from "rxjs";
 import { slugFromPath } from "../slug";
 import { defineNode, type PipelineContext, type Node } from "../node";
+import { putPageText, putPdfMetadata, putImage } from "@/lib/books";
+import { hashBuffer } from "@/lib/pipeline/llm-log";
+import { getDb } from "@/lib/db";
 
 export interface Page {
   pageId: string;
@@ -18,14 +21,18 @@ export interface PageProgress {
   label: string;
 }
 
-function readPagesFromDisk(pagesDir: string): Page[] {
+function readPagesFromDisk(label: string, pagesDir: string): Page[] {
+  const db = getDb(label);
   return fs
     .readdirSync(pagesDir)
     .filter((d) => /^pg\d{3}$/.test(d))
     .sort()
     .map((pageId) => {
       const pageDir = path.join(pagesDir, pageId);
-      const text = fs.readFileSync(path.join(pageDir, "text.txt"), "utf-8");
+      const row = db
+        .prepare("SELECT text FROM pages WHERE page_id = ?")
+        .get(pageId) as { text: string } | undefined;
+      const text = row?.text ?? "";
       return {
         pageId,
         pageNumber: parseInt(pageId.slice(2), 10),
@@ -72,13 +79,10 @@ function extractPdfMetadata(doc: MupdfDocument): PdfMetadata {
   return metadata;
 }
 
-function writePdfMetadata(doc: MupdfDocument, extractDir: string): void {
+function writePdfMetadata(doc: MupdfDocument, label: string, extractDir: string): void {
   const metadata = extractPdfMetadata(doc);
   fs.mkdirSync(extractDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(extractDir, "metadata.json"),
-    JSON.stringify(metadata, null, 2) + "\n",
-  );
+  putPdfMetadata(label, metadata);
 }
 
 const tick = () => new Promise<void>((r) => setImmediate(r));
@@ -96,7 +100,7 @@ function openPdf(pdfPath: string): MupdfDocument {
   }
 }
 
-function extractPage(doc: MupdfDocument, i: number, bookDir: string): Page {
+function extractPage(doc: MupdfDocument, i: number, label: string, bookDir: string): Page {
   const pageNum = i + 1;
   const pageId = "pg" + String(pageNum).padStart(3, "0");
   const pageDir = path.join(bookDir, "pages", pageId);
@@ -109,12 +113,23 @@ function extractPage(doc: MupdfDocument, i: number, bookDir: string): Page {
   const matrix = mupdf.Matrix.scale(2, 2);
   const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false);
   const imagePath = path.join(pageDir, "page.png");
-  fs.writeFileSync(imagePath, Buffer.from(pixmap.asPNG()));
+  const pagePngBuf = Buffer.from(pixmap.asPNG());
+  fs.writeFileSync(imagePath, pagePngBuf);
+  putImage(
+    label,
+    `${pageId}_page`,
+    pageId,
+    `extract/pages/${pageId}/page.png`,
+    hashBuffer(pagePngBuf),
+    pagePngBuf.readUInt32BE(16),
+    pagePngBuf.readUInt32BE(20),
+    "page"
+  );
 
   // Extract text
   const stext = page.toStructuredText();
   const text = stext.asText();
-  fs.writeFileSync(path.join(pageDir, "text.txt"), text);
+  putPageText(label, pageId, pageNum, text);
 
   // Extract embedded raster images from page resources (including Form XObjects)
   const pdfDoc = doc.asPDF();
@@ -137,15 +152,19 @@ function extractPage(doc: MupdfDocument, i: number, bookDir: string): Page {
             const image = pdfDoc!.loadImage(xobj);
             const imgPixmap = image.toPixmap();
             imgIndex++;
-            fs.writeFileSync(
-              path.join(
-                imagesDir,
-                pageId +
-                  "_im" +
-                  String(imgIndex).padStart(3, "0") +
-                  ".png"
-              ),
-              Buffer.from(imgPixmap.asPNG())
+            const imgId = pageId + "_im" + String(imgIndex).padStart(3, "0");
+            const imgFileName = imgId + ".png";
+            const imgBuf = Buffer.from(imgPixmap.asPNG());
+            fs.writeFileSync(path.join(imagesDir, imgFileName), imgBuf);
+            putImage(
+              label,
+              imgId,
+              pageId,
+              `extract/pages/${pageId}/images/${imgFileName}`,
+              hashBuffer(imgBuf),
+              imgBuf.readUInt32BE(16),
+              imgBuf.readUInt32BE(20),
+              "extract"
             );
           } catch {
             // Skip images that fail to decode
@@ -179,7 +198,7 @@ async function extractPages(options: {
   onProgress: (progress: PageProgress) => void;
 }): Promise<Page[]> {
   const doc = openPdf(options.pdfPath);
-  writePdfMetadata(doc, options.extractDir);
+  writePdfMetadata(doc, options.label, options.extractDir);
   const totalPages = doc.countPages();
   const start = (options.startPage ?? 1) - 1;
   const end = Math.min(options.endPage ?? totalPages, totalPages);
@@ -187,7 +206,7 @@ async function extractPages(options: {
   const pages: Page[] = [];
 
   for (let i = start; i < end; i++) {
-    const page = extractPage(doc, i, options.extractDir);
+    const page = extractPage(doc, i, options.label, options.extractDir);
     pages.push(page);
     options.onProgress({ page: i - start + 1, totalPages: rangeSize, label: options.label });
     await tick();
@@ -203,7 +222,7 @@ export const pagesNode: Node<Page[]> = defineNode<Page[] | PageProgress>({
     const startPage = ctx.config.start_page ?? 1;
     const firstPageId = "pg" + String(startPage).padStart(3, "0");
     if (!fs.existsSync(path.join(pagesDir, firstPageId, "page.png"))) return null;
-    const allPages = readPagesFromDisk(pagesDir);
+    const allPages = readPagesFromDisk(ctx.label, pagesDir);
     const endPage = ctx.config.end_page ?? Infinity;
     return allPages.filter((p) => p.pageNumber >= startPage && p.pageNumber <= endPage);
   },

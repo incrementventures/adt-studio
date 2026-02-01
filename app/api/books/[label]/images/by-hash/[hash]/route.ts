@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import { getBooksRoot } from "@/lib/books";
+import { getBooksRoot, getImageByHash } from "@/lib/books";
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import { hashBase64 } from "@/lib/pipeline/llm-log";
 
@@ -24,13 +24,28 @@ export async function GET(
     return NextResponse.json({ error: "Invalid pageId" }, { status: 400 });
   }
 
-  const { pagesDir } = resolveBookPaths(label, getBooksRoot());
+  const booksRoot = getBooksRoot();
+  const { bookDir, pagesDir } = resolveBookPaths(label, booksRoot);
 
-  // Build candidate file list
+  // Fast path: DB lookup
+  const relPath = getImageByHash(label, hash);
+  if (relPath) {
+    const absPath = path.join(bookDir, relPath);
+    if (fs.existsSync(absPath)) {
+      const buf = fs.readFileSync(absPath);
+      return new NextResponse(buf, {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        },
+      });
+    }
+  }
+
+  // Fallback: scan filesystem (for images not yet in DB)
   const candidates: string[] = [];
 
   if (pageId) {
-    // Known page: check page image + extracted images
     const pageDir = path.join(pagesDir, pageId);
     const pageImage = path.join(pageDir, "page.png");
     if (fs.existsSync(pageImage)) candidates.push(pageImage);
@@ -44,7 +59,6 @@ export async function GET(
       }
     }
   } else if (fs.existsSync(pagesDir)) {
-    // No page known (e.g. metadata): scan all page images only
     for (const entry of fs.readdirSync(pagesDir, { withFileTypes: true })) {
       if (entry.isDirectory() && PAGE_RE.test(entry.name)) {
         const pageImage = path.join(pagesDir, entry.name, "page.png");

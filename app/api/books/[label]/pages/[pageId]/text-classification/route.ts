@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
-import path from "node:path";
 import {
-  getBooksRoot,
   getLatestTextClassificationPath,
   getTextClassificationVersion,
   listTextClassificationVersions,
-  getCurrentTextClassificationVersion,
-  setCurrentTextClassificationVersion,
   resolvePageImagePath,
   getPage,
+  putNodeData,
   type PageTextClassification,
 } from "@/lib/books";
 import { loadBookConfig } from "@/lib/config";
-import { resolveBookPaths } from "@/lib/pipeline/types";
 import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
@@ -37,7 +33,7 @@ export async function GET(
     );
   }
 
-  const current = getCurrentTextClassificationVersion(label, pageId);
+  const current = versions[versions.length - 1];
   const data = getTextClassificationVersion(label, pageId, current);
   if (!data) {
     return NextResponse.json(
@@ -107,8 +103,6 @@ export async function PUT(
     );
   }
 
-  setCurrentTextClassificationVersion(label, pageId, version);
-
   const data = getTextClassificationVersion(label, pageId, version);
   return NextResponse.json({ versions, current: version, data });
 }
@@ -138,14 +132,7 @@ export async function PATCH(
     const data: PageTextClassification = body.data;
 
     const nextVersion = latest.version + 1;
-    const paths = resolveBookPaths(label, getBooksRoot());
-    const newFile = path.join(
-      paths.textClassificationDir,
-      `${pageId}.v${String(nextVersion).padStart(3, "0")}.json`
-    );
-
-    fs.writeFileSync(newFile, JSON.stringify(data, null, 2), "utf-8");
-    setCurrentTextClassificationVersion(label, pageId, nextVersion);
+    putNodeData(label, "text-classification", pageId, nextVersion, data);
 
     return NextResponse.json({ version: nextVersion, ...data });
   }
@@ -240,14 +227,7 @@ export async function PATCH(
   }
 
   const nextVersion = latest.version + 1;
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const newFile = path.join(
-    paths.textClassificationDir,
-    `${pageId}.v${String(nextVersion).padStart(3, "0")}.json`
-  );
-
-  fs.writeFileSync(newFile, JSON.stringify(data, null, 2), "utf-8");
-  setCurrentTextClassificationVersion(label, pageId, nextVersion);
+  putNodeData(label, "text-classification", pageId, nextVersion, data);
 
   return NextResponse.json({ version: nextVersion, ...data });
 }

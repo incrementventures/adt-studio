@@ -18,11 +18,12 @@ import {
   loadUnprunedImages,
   resolvePageImagePath,
   getPage,
-  getCurrentWebRenderingVersion,
   getWebRenderingVersion,
   listWebRenderingVersions,
-  setCurrentWebRenderingVersion,
+  putNodeData,
+  resetNodeVersions,
 } from "@/lib/books";
+import { getDb } from "@/lib/db";
 import {
   loadBookConfig,
   getImageFilters,
@@ -31,7 +32,7 @@ import {
   getTextTypes,
   getTextGroupTypes,
 } from "@/lib/config";
-import { resolveBookPaths } from "@/lib/pipeline/types";
+
 import { createContext, resolveModel } from "@/lib/pipeline/node";
 import type { LLMProvider } from "@/lib/pipeline/node";
 import {
@@ -57,13 +58,12 @@ import {
 function resolveCtx(label: string) {
   const config = loadBookConfig(label);
   const booksRoot = getBooksRoot();
-  const paths = resolveBookPaths(label, booksRoot);
   const ctx = createContext(label, {
     config,
     outputRoot: booksRoot,
     provider: (config.provider as LLMProvider | undefined) ?? "openai",
   });
-  return { config, booksRoot, paths, ctx };
+  return { config, booksRoot, ctx };
 }
 
 /** Build the text-id lookup that web-rendering and web-edit both need. */
@@ -117,7 +117,7 @@ export async function runWebRendering(
   pageId: string,
   onProgress?: (message: string) => void
 ): Promise<WebRenderingResult> {
-  const { config, paths, ctx } = resolveCtx(label);
+  const { config, ctx } = resolveCtx(label);
   const model = resolveModel(ctx, config.web_rendering?.model);
 
   const pageImagePath = resolvePageImagePath(label, pageId);
@@ -129,8 +129,6 @@ export async function runWebRendering(
   const { textLookup, imageMap } = buildTextLookup(label, pageId);
 
   const promptName = config.web_rendering?.prompt ?? "web_generation_html";
-  const renderingDir = paths.webRenderingDir;
-  fs.mkdirSync(renderingDir, { recursive: true });
 
   const sectionRenderings: SectionRendering[] = [];
   for (let si = 0; si < sectioning.sections.length; si++) {
@@ -166,10 +164,7 @@ export async function runWebRendering(
     sectionRenderings.push(rendering);
 
     const sectionId = `${pageId}_s${String(si).padStart(3, "0")}`;
-    fs.writeFileSync(
-      path.join(renderingDir, `${sectionId}.json`),
-      JSON.stringify(rendering, null, 2) + "\n"
-    );
+    putNodeData(label, "web-rendering", sectionId, 1, rendering);
   }
 
   // Stub if all sections pruned/empty
@@ -181,24 +176,19 @@ export async function runWebRendering(
       reasoning: "All sections on this page are pruned — nothing to render.",
     };
     sectionRenderings.push(stub);
-    fs.writeFileSync(
-      path.join(renderingDir, `${pageId}_s000.json`),
-      JSON.stringify(stub, null, 2) + "\n"
-    );
+    putNodeData(label, "web-rendering", `${pageId}_s000`, 1, stub);
   }
 
-  // Clean up old versioned/legacy files
-  for (const f of fs.readdirSync(renderingDir)) {
-    if (
-      new RegExp(`^${pageId}_s\\d{3}\\.v\\d{3}\\.json$`).test(f) ||
-      new RegExp(`^${pageId}_s\\d{3}\\.current$`).test(f) ||
-      f === `${pageId}.json` ||
-      new RegExp(`^${pageId}\\.v\\d{3}\\.json$`).test(f) ||
-      f === `${pageId}.current` ||
-      f === `${pageId}.rendered`
-    ) {
-      fs.unlinkSync(path.join(renderingDir, f));
-    }
+  // Clean up old versions for all sections of this page
+  const db = getDb(label);
+  const existingSections = db
+    .prepare(
+      `SELECT DISTINCT item_id FROM node_data
+       WHERE node = 'web-rendering' AND item_id LIKE ? || '_s%'`
+    )
+    .all(pageId) as { item_id: string }[];
+  for (const row of existingSections) {
+    resetNodeVersions(label, "web-rendering", row.item_id);
   }
 
   return {
@@ -233,13 +223,14 @@ export async function runWebEdit(
   params: WebEditParams
 ): Promise<WebEditResult> {
   const { pageId, sectionIndex, annotationImageBase64, annotations, currentHtml } = params;
-  const { config, paths, ctx } = resolveCtx(label);
+  const { config, ctx } = resolveCtx(label);
   const model = resolveModel(ctx, config.web_rendering?.model);
-  const renderingDir = paths.webRenderingDir;
 
   const sectionId = `${pageId}_s${String(sectionIndex).padStart(3, "0")}`;
 
-  const currentVersion = getCurrentWebRenderingVersion(label, sectionId);
+  const existingVersions = listWebRenderingVersions(label, sectionId);
+  if (existingVersions.length === 0) throw new Error(`Section ${sectionId} not found`);
+  const currentVersion = existingVersions[existingVersions.length - 1];
   const currentSection = getWebRenderingVersion(label, sectionId, currentVersion);
   if (!currentSection) throw new Error(`Section ${sectionId} not found`);
 
@@ -288,18 +279,11 @@ export async function runWebEdit(
     reasoning: result.reasoning,
   };
 
-  const existingVersions = listWebRenderingVersions(label, sectionId);
+  const allVersions = listWebRenderingVersions(label, sectionId);
   const nextVersion =
-    existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 2;
+    allVersions.length > 0 ? Math.max(...allVersions) + 1 : 2;
 
-  fs.writeFileSync(
-    path.join(
-      renderingDir,
-      `${sectionId}.v${String(nextVersion).padStart(3, "0")}.json`
-    ),
-    JSON.stringify(updatedSection, null, 2) + "\n"
-  );
-  setCurrentWebRenderingVersion(label, sectionId, nextVersion);
+  putNodeData(label, "web-rendering", sectionId, nextVersion, updatedSection);
 
   return {
     section: updatedSection,
@@ -321,7 +305,7 @@ export async function runTextClassification(
   label: string,
   pageId: string
 ): Promise<TextClassificationResult> {
-  const { config, paths, ctx } = resolveCtx(label);
+  const { config, ctx } = resolveCtx(label);
   const model = resolveModel(ctx, config.text_classification?.model);
 
   const pageImagePath = resolvePageImagePath(label, pageId);
@@ -335,8 +319,6 @@ export async function runTextClassification(
 
   const promptName =
     config.text_classification?.prompt ?? "text_classification";
-  const textClassificationDir = paths.textClassificationDir;
-  fs.mkdirSync(textClassificationDir, { recursive: true });
 
   const textTypeKeys = Object.keys(getTextTypes(config)) as [string, ...string[]];
   const groupTypeKeys = Object.keys(getTextGroupTypes(config)) as [string, ...string[]];
@@ -367,18 +349,11 @@ export async function runTextClassification(
     promptName,
   });
 
-  // Write result to disk as the base file
-  fs.writeFileSync(
-    path.join(textClassificationDir, `${pageId}.json`),
-    JSON.stringify(classification, null, 2) + "\n"
-  );
+  // Write result to DB as version 1
+  putNodeData(label, "text-classification", pageId, 1, classification);
 
   // Reset version tracking
-  for (const f of fs.readdirSync(textClassificationDir)) {
-    if (f.startsWith(`${pageId}.v`) || f === `${pageId}.current`) {
-      fs.unlinkSync(path.join(textClassificationDir, f));
-    }
-  }
+  resetNodeVersions(label, "text-classification", pageId);
 
   return { version: 1, ...classification };
 }
@@ -391,7 +366,7 @@ export async function runPageSectioning(
   label: string,
   pageId: string
 ) {
-  const { config, paths, ctx } = resolveCtx(label);
+  const { config, ctx } = resolveCtx(label);
 
   const sectionTypes = config.section_types ?? {};
   if (Object.keys(sectionTypes).length === 0) {
@@ -412,8 +387,6 @@ export async function runPageSectioning(
   const groups = buildUnprunedGroupSummaries(extraction, pageId);
 
   const promptName = config.page_sectioning?.prompt ?? "page_sectioning";
-  const sectioningDir = paths.pageSectioningDir;
-  fs.mkdirSync(sectioningDir, { recursive: true });
 
   const sectionTypeList = Object.entries(sectionTypes).map(
     ([key, description]) => ({ key, description })
@@ -442,10 +415,7 @@ export async function runPageSectioning(
   sectioning.text_classification_version = extractionResult.version;
   sectioning.image_classification_version = imageClassResult?.version;
 
-  fs.writeFileSync(
-    path.join(sectioningDir, `${pageId}.json`),
-    JSON.stringify(sectioning, null, 2) + "\n"
-  );
+  putNodeData(label, "page-sectioning", pageId, 1, sectioning);
 
   return sectioning;
 }
@@ -455,7 +425,7 @@ export async function runPageSectioning(
 // ---------------------------------------------------------------------------
 
 export function runImageClassification(label: string, pageId: string) {
-  const { config, paths } = resolveCtx(label);
+  const { config } = resolveCtx(label);
   const sizeFilter = getImageFilters(config).size;
 
   const pageImagePath = resolvePageImagePath(label, pageId);
@@ -493,12 +463,10 @@ export function runImageClassification(label: string, pageId: string) {
     });
   }
 
-  const classificationDir = paths.imageClassificationDir;
-  fs.mkdirSync(classificationDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(classificationDir, `${pageId}.json`),
-    JSON.stringify(classification, null, 2) + "\n"
-  );
+  putNodeData(label, "image-classification", pageId, 1, classification);
+
+  // Reset version tracking
+  resetNodeVersions(label, "image-classification", pageId);
 
   return classification;
 }

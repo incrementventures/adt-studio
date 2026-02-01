@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { getBookMetadata } from "@/lib/books";
+import { SchemaMismatchError } from "@/lib/db";
 import { BookSidebar } from "./book-sidebar";
+import { SchemaErrorPage } from "./schema-error";
 
 export default async function BookLayout({
   children,
@@ -10,7 +12,17 @@ export default async function BookLayout({
   params: Promise<{ label: string }>;
 }) {
   const { label } = await params;
-  const metadata = getBookMetadata(label);
+
+  let metadata;
+  try {
+    metadata = getBookMetadata(label);
+  } catch (err) {
+    if (err instanceof SchemaMismatchError) {
+      return <SchemaErrorPage label={label} />;
+    }
+    throw err;
+  }
+
   if (!metadata) notFound();
 
   return (

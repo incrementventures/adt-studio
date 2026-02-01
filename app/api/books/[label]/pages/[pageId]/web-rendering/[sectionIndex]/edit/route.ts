@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  getCurrentWebRenderingVersion,
+  listWebRenderingVersions,
   getWebRenderingVersion,
 } from "@/lib/books";
 import { queue } from "@/lib/queue";
@@ -51,8 +51,9 @@ export async function POST(
 
   // Validate section exists
   const sectionId = `${pageId}_s${String(sectionIndex).padStart(3, "0")}`;
-  const currentVersion = getCurrentWebRenderingVersion(label, sectionId);
-  const currentSection = getWebRenderingVersion(label, sectionId, currentVersion);
+  const sectionVersions = listWebRenderingVersions(label, sectionId);
+  const currentVersion = sectionVersions.length > 0 ? sectionVersions[sectionVersions.length - 1] : 0;
+  const currentSection = currentVersion > 0 ? getWebRenderingVersion(label, sectionId, currentVersion) : null;
   if (!currentSection) {
     return NextResponse.json(
       { error: `Section ${sectionId} not found` },

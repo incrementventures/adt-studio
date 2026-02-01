@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
+import { appendLlmLog } from "@/lib/books";
 import type { ModelMessage } from "ai";
 
 interface LlmLogMeta {
@@ -85,7 +85,7 @@ export function sanitizeMessages(messages: ModelMessage[]): LlmLogMessage[] {
  * Width is at byte offset 16, height at 20 (both big-endian uint32).
  * We only need to decode the first 24 bytes (32 base64 chars covers that).
  */
-function pngDimensions(base64: string): { width: number; height: number } {
+export function pngDimensions(base64: string): { width: number; height: number } {
   try {
     const buf = Buffer.from(base64.slice(0, 32), "base64");
     if (buf.length < 24) return { width: 0, height: 0 };
@@ -104,6 +104,14 @@ export function hashBase64(base64: string): string {
   return createHash("sha256").update(base64).digest("hex").slice(0, 16);
 }
 
+/**
+ * Hash a raw buffer using the same scheme as log entry image hashes
+ * (hash the base64 encoding, not the raw bytes).
+ */
+export function hashBuffer(buf: Buffer): string {
+  return hashBase64(buf.toString("base64"));
+}
+
 const TASK_TYPE_TO_DIR: Record<string, string> = {
   "web-edit": "web-rendering",
 };
@@ -118,29 +126,8 @@ export function resolveCacheDir(meta: LlmLogMeta): string {
 }
 
 /**
- * Resolve the log file path for a book label.
- */
-function logPath(label: string): string {
-  const booksRoot = path.resolve(process.env.BOOKS_ROOT ?? "books");
-  return path.join(booksRoot, label, "llm-log.jsonl");
-}
-
-const MAX_LOG_ENTRIES = 250;
-
-/**
- * Append a log entry to the book's JSONL log file, keeping at most
- * MAX_LOG_ENTRIES entries (oldest are dropped).
+ * Append a log entry to the book's SQLite log table.
  */
 export function appendLogEntry(entry: LlmLogEntry): void {
-  const filePath = logPath(entry.label);
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(filePath, JSON.stringify(entry) + "\n");
-
-  // Trim if over limit
-  const content = fs.readFileSync(filePath, "utf-8");
-  const lines = content.split("\n").filter(Boolean);
-  if (lines.length > MAX_LOG_ENTRIES) {
-    fs.writeFileSync(filePath, lines.slice(lines.length - MAX_LOG_ENTRIES).join("\n") + "\n");
-  }
+  appendLlmLog(entry.label, entry);
 }

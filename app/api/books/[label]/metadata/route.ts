@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import fs from "node:fs";
-import { getBookMetadata, getBooksRoot } from "@/lib/books";
-import { resolveBookPaths } from "@/lib/pipeline/types";
+import { getBookMetadata, deleteBookMetadata } from "@/lib/books";
 import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
@@ -21,11 +19,8 @@ export async function POST(
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
   }
 
-  // Remove existing metadata node output so the node re-runs the LLM
-  const paths = resolveBookPaths(label, getBooksRoot());
-  if (fs.existsSync(paths.metadataFile)) {
-    fs.unlinkSync(paths.metadataFile);
-  }
+  // Remove existing LLM metadata so the node re-runs
+  deleteBookMetadata(label, "llm");
 
   const jobId = queue.enqueue("metadata", label);
   return NextResponse.json({ jobId });
