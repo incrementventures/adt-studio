@@ -11,13 +11,14 @@ import {
  * and persisting the result.
  */
 export async function sectionPage(options: {
+  label: string;
+  pageId: string;
   model: LanguageModel;
   pageImageBase64: string;
   images: { image_id: string; imageBase64: string }[];
   groups: { group_id: string; group_type: string; text: string }[];
   sectionTypes: { key: string; description: string }[];
   promptName: string;
-  cacheDir: string;
 }): Promise<PageSectioning> {
   const sectionTypeKeys = options.sectionTypes.map((s) => s.key) as [
     string,
@@ -41,6 +42,9 @@ export async function sectionPage(options: {
   );
 
   return cachedPromptGenerateObject<PageSectioning>({
+    label: options.label,
+    taskType: "page-sectioning",
+    pageId: options.pageId,
     model: options.model,
     schema,
     promptName: options.promptName,
@@ -50,6 +54,5 @@ export async function sectionPage(options: {
       groups: options.groups,
       section_types: options.sectionTypes,
     },
-    cacheDir: options.cacheDir,
   });
 }

@@ -151,6 +151,8 @@ export async function runWebRendering(
     onProgress?.(`Rendering section ${si + 1}/${sectioning.sections.length}`);
 
     const rendering = await renderSection({
+      label,
+      pageId,
       model,
       pageImageBase64,
       sectionIndex: si,
@@ -158,7 +160,6 @@ export async function runWebRendering(
       texts,
       images,
       promptName,
-      cacheDir: renderingDir,
       maxRetries: config.web_rendering?.max_retries ?? 2,
     });
 
@@ -270,11 +271,12 @@ export async function runWebEdit(
   }
 
   const result = await editSection({
+    label,
+    pageId,
     model,
     currentHtml,
     annotationImageBase64,
     annotations,
-    cacheDir: renderingDir,
     allowedTextIds,
     allowedImageIds,
     maxRetries: config.web_rendering?.max_retries ?? 2,
@@ -351,6 +353,7 @@ export async function runTextClassification(
   const pageNumber = parseInt(pageId.replace("pg", ""), 10);
 
   const classification = await classifyPage({
+    label,
     model,
     schema,
     pageNumber,
@@ -362,7 +365,6 @@ export async function runTextClassification(
     textGroupTypes,
     prunedTextTypes: getPrunedTextTypes(config),
     promptName,
-    cacheDir: textClassificationDir,
   });
 
   // Write result to disk as the base file
@@ -418,13 +420,14 @@ export async function runPageSectioning(
   );
 
   const sectioning = await sectionPage({
+    label,
+    pageId,
     model,
     pageImageBase64,
     images,
     groups,
     sectionTypes: sectionTypeList,
     promptName,
-    cacheDir: sectioningDir,
   });
 
   // Mark pruned sections

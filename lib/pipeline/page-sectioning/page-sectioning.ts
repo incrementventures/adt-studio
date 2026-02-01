@@ -124,13 +124,14 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
               const groups = buildUnprunedGroupSummaries(extraction, p.pageId);
 
               const sectioning = await sectionPage({
+                label: ctx.label,
+                pageId: p.pageId,
                 model: resolveModel(ctx, ctx.config.page_sectioning?.model),
                 pageImageBase64,
                 images,
                 groups,
                 sectionTypes: sectionTypeList,
                 promptName,
-                cacheDir: sectioningDir,
               });
 
               // Mark pruned sections

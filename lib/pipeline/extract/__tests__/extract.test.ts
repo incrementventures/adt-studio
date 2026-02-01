@@ -66,6 +66,109 @@ describe("extract", () => {
     expect(metadata.title).toBe("Hyena and Raven");
   });
 
+  describe("page ranges", () => {
+    it("extracts only the requested range (startPage + endPage)", async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-range-"));
+      try {
+        const progress = await lastValueFrom(
+          extract(pdfPath, dir, { startPage: 2, endPage: 4 }).pipe(toArray())
+        );
+
+        // Should report 3 pages of progress
+        expect(progress.length).toBe(3);
+        expect(progress[0]).toEqual({ page: 1, totalPages: 3, label: "raven" });
+        expect(progress[2]).toEqual({ page: 3, totalPages: 3, label: "raven" });
+
+        const pagesDir = path.join(dir, "raven", "extract", "pages");
+        const dirs = fs.readdirSync(pagesDir).sort();
+        expect(dirs).toEqual(["pg002", "pg003", "pg004"]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("extracts from startPage to end when endPage is omitted", async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-start-"));
+      try {
+        // Get total page count first
+        const allProgress = await lastValueFrom(
+          extract(pdfPath, fs.mkdtempSync(path.join(os.tmpdir(), "extract-all-"))).pipe(toArray())
+        );
+        const totalPages = allProgress[0].totalPages;
+
+        const progress = await lastValueFrom(
+          extract(pdfPath, dir, { startPage: totalPages - 1 }).pipe(toArray())
+        );
+
+        // Should extract only the last 2 pages
+        expect(progress.length).toBe(2);
+        expect(progress[0].totalPages).toBe(2);
+
+        const pagesDir = path.join(dir, "raven", "extract", "pages");
+        const dirs = fs.readdirSync(pagesDir).sort();
+        expect(dirs.length).toBe(2);
+        // First dir should be the (totalPages-1)-th page
+        const expectedFirst = "pg" + String(totalPages - 1).padStart(3, "0");
+        expect(dirs[0]).toBe(expectedFirst);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("extracts from page 1 to endPage when startPage is omitted", async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-end-"));
+      try {
+        const progress = await lastValueFrom(
+          extract(pdfPath, dir, { endPage: 3 }).pipe(toArray())
+        );
+
+        expect(progress.length).toBe(3);
+        expect(progress[0]).toEqual({ page: 1, totalPages: 3, label: "raven" });
+        expect(progress[2]).toEqual({ page: 3, totalPages: 3, label: "raven" });
+
+        const pagesDir = path.join(dir, "raven", "extract", "pages");
+        const dirs = fs.readdirSync(pagesDir).sort();
+        expect(dirs).toEqual(["pg001", "pg002", "pg003"]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("clamps endPage to total pages when it exceeds document length", async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-clamp-"));
+      try {
+        const progress = await lastValueFrom(
+          extract(pdfPath, dir, { startPage: 1, endPage: 9999 }).pipe(toArray())
+        );
+
+        // Should extract all pages without error
+        expect(progress.length).toBeGreaterThan(0);
+        // totalPages should be the actual page count, not 9999
+        expect(progress[0].totalPages).toBeLessThan(9999);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("extracts a single page when startPage equals endPage", async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-single-"));
+      try {
+        const progress = await lastValueFrom(
+          extract(pdfPath, dir, { startPage: 3, endPage: 3 }).pipe(toArray())
+        );
+
+        expect(progress.length).toBe(1);
+        expect(progress[0]).toEqual({ page: 1, totalPages: 1, label: "raven" });
+
+        const pagesDir = path.join(dir, "raven", "extract", "pages");
+        const dirs = fs.readdirSync(pagesDir);
+        expect(dirs).toEqual(["pg003"]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("extracts images nested inside Form XObjects (page range)", async () => {
     const egyptPdf = path.join(fixtureDir, "ancient_egypt.pdf");
     const egyptDir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-egypt-"));

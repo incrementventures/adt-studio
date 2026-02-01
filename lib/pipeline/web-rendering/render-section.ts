@@ -25,6 +25,8 @@ export interface RenderSectionImage {
  * Validates the generated HTML via the cache layer's retry mechanism.
  */
 export async function renderSection(options: {
+  label: string;
+  pageId: string;
   model: LanguageModel;
   pageImageBase64: string;
   sectionIndex: number;
@@ -32,7 +34,6 @@ export async function renderSection(options: {
   texts: RenderSectionText[];
   images: RenderSectionImage[];
   promptName: string;
-  cacheDir: string;
   maxRetries?: number;
 }): Promise<SectionRendering> {
   const allowedTextIds = options.texts.map((t) => t.text_id);
@@ -42,6 +43,9 @@ export async function renderSection(options: {
     reasoning: string;
     content: string;
   }>({
+    label: options.label,
+    taskType: "web-rendering",
+    pageId: options.pageId,
     model: options.model,
     schema: webRenderingResponseSchema,
     promptName: options.promptName,
@@ -51,7 +55,6 @@ export async function renderSection(options: {
       texts: options.texts,
       images: options.images,
     },
-    cacheDir: options.cacheDir,
     validate: (result) =>
       validateSectionHtml(result.content, allowedTextIds, allowedImageIds),
     maxRetries: options.maxRetries ?? 2,

@@ -20,11 +20,12 @@ export interface Annotation {
  * HTML via the cache layer's retry mechanism.
  */
 export async function editSection(options: {
+  label: string;
+  pageId: string;
   model: LanguageModel;
   currentHtml: string;
   annotationImageBase64: string;
   annotations: Annotation[];
-  cacheDir: string;
   allowedTextIds?: string[];
   allowedImageIds?: string[];
   maxRetries?: number;
@@ -46,6 +47,9 @@ export async function editSection(options: {
     reasoning: string;
     content: string;
   }>({
+    label: options.label,
+    taskType: "web-edit",
+    pageId: options.pageId,
     model: options.model,
     schema: webRenderingResponseSchema,
     promptName: "web_edit_section",
@@ -54,7 +58,6 @@ export async function editSection(options: {
       annotations: options.annotations,
       current_html: options.currentHtml,
     },
-    cacheDir: options.cacheDir,
     validate,
     maxRetries: options.maxRetries ?? 2,
   });

@@ -44,7 +44,7 @@ export function BookSidebar({
     });
 
   return (
-    <nav className="flex h-full flex-col px-4 pt-6 text-sm">
+    <nav className="flex h-full flex-col pl-6 pr-4 pt-6 text-sm">
       <Link
         href={base}
         className="mb-4 block font-semibold text-white hover:text-slate-300"

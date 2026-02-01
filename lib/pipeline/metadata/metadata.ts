@@ -62,11 +62,12 @@ export const metadataNode: Node<BookMetadata> = defineNode<
           const metadataFile = path.join(metadataDir, "metadata.json");
 
           const metadata = await cachedPromptGenerateObject<BookMetadata>({
+            label: ctx.label,
+            taskType: "metadata",
             model: resolveModel(ctx, ctx.config.metadata?.model),
             schema: bookMetadataSchema,
             promptName: ctx.config.metadata?.prompt ?? "metadata_extraction",
             promptContext: { pages },
-            cacheDir: metadataDir,
           });
 
           fs.mkdirSync(metadataDir, { recursive: true });

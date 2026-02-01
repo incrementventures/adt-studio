@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import yaml from "js-yaml";
 import { getBooksRoot } from "@/lib/books";
 import { extract } from "@/lib/pipeline/extract/extract";
 import { queue } from "@/lib/queue";
@@ -36,11 +37,44 @@ export async function POST(request: Request) {
     );
   }
 
+  // Parse optional page range
+  const startPageRaw = formData.get("start_page");
+  const endPageRaw = formData.get("end_page");
+  const startPage =
+    typeof startPageRaw === "string" && startPageRaw
+      ? parseInt(startPageRaw, 10)
+      : null;
+  const endPage =
+    typeof endPageRaw === "string" && endPageRaw
+      ? parseInt(endPageRaw, 10)
+      : null;
+
+  if (startPage !== null && (!Number.isInteger(startPage) || startPage < 1)) {
+    return new Response(
+      JSON.stringify({ error: "start_page must be a positive integer" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  if (endPage !== null && (!Number.isInteger(endPage) || endPage < 1)) {
+    return new Response(
+      JSON.stringify({ error: "end_page must be a positive integer" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   // Save PDF named after the label so extract() derives the correct slug
   const pdfPath = path.join(bookDir, `${label}.pdf`);
   fs.mkdirSync(bookDir, { recursive: true });
   const buffer = Buffer.from(await file.arrayBuffer());
   fs.writeFileSync(pdfPath, buffer);
+
+  // Write book config.yaml
+  const bookConfig: Record<string, unknown> = {
+    pdf_path: `${label}.pdf`,
+  };
+  if (startPage !== null) bookConfig.start_page = startPage;
+  if (endPage !== null) bookConfig.end_page = endPage;
+  fs.writeFileSync(path.join(bookDir, "config.yaml"), yaml.dump(bookConfig));
 
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -49,7 +83,10 @@ export async function POST(request: Request) {
   const write = (obj: object) =>
     writer.write(encoder.encode(JSON.stringify(obj) + "\n"));
 
-  const progress$ = extract(pdfPath, booksRoot);
+  const progress$ = extract(pdfPath, booksRoot, {
+    startPage: startPage ?? undefined,
+    endPage: endPage ?? undefined,
+  });
 
   progress$.subscribe({
     next(p) {

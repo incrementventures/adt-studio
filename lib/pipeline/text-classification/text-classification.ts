@@ -99,6 +99,9 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
 
               const extraction =
                 await cachedPromptGenerateObject<PageTextClassification>({
+                  label: ctx.label,
+                  taskType: "text-classification",
+                  pageId: p.pageId,
                   model: resolveModel(ctx, ctx.config.text_classification?.model),
                   schema: llmPageTextClassificationSchema,
                   promptName,
@@ -108,7 +111,6 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
                     text_types: textTypes,
                     text_group_types: textGroupTypes,
                   },
-                  cacheDir: textClassificationDir,
                 });
 
               // Assign stable group IDs and default is_pruned
