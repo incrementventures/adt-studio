@@ -62,51 +62,79 @@ const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 
+/**
+ * Deep-merge two plain objects. Plain objects recurse;
+ * arrays and primitives: override wins.
+ */
+export function deepMerge<T extends Record<string, unknown>>(
+  base: T,
+  overrides: Record<string, unknown>
+): T {
+  const result = { ...base } as Record<string, unknown>;
+  for (const key of Object.keys(overrides)) {
+    const baseVal = result[key];
+    const overVal = overrides[key];
+    if (
+      baseVal !== null &&
+      overVal !== null &&
+      typeof baseVal === "object" &&
+      typeof overVal === "object" &&
+      !Array.isArray(baseVal) &&
+      !Array.isArray(overVal)
+    ) {
+      result[key] = deepMerge(
+        baseVal as Record<string, unknown>,
+        overVal as Record<string, unknown>
+      );
+    } else {
+      result[key] = overVal;
+    }
+  }
+  return result as T;
+}
+
 export function loadConfig(configPath?: string): AppConfig {
   const resolved = configPath ?? path.resolve(process.cwd(), "config.yaml");
   const raw = yaml.load(fs.readFileSync(resolved, "utf-8"));
   return configSchema.parse(raw);
 }
 
-// Module-level config for backwards compatibility (used by schema files, books.ts, web app)
-const defaultConfigPath = path.resolve(process.cwd(), "config.yaml");
-const raw = yaml.load(fs.readFileSync(defaultConfigPath, "utf-8"));
-export const config: AppConfig = configSchema.parse(raw);
-
-export function getTextTypes(): Record<string, string> {
-  return config.text_types;
+export function loadBookConfig(label: string): AppConfig {
+  const base = loadConfig();
+  const bookConfigPath = path.join(
+    path.resolve(process.env.BOOKS_ROOT ?? "books"),
+    label,
+    "config.yaml"
+  );
+  if (!fs.existsSync(bookConfigPath)) return base;
+  const overrides = yaml.load(fs.readFileSync(bookConfigPath, "utf-8"));
+  return configSchema.parse(
+    deepMerge(base, overrides as Record<string, unknown>)
+  );
 }
 
-export function getTextGroupTypes(): Record<string, string> {
-  return config.text_group_types;
+export function getTextTypes(cfg: AppConfig): Record<string, string> {
+  return cfg.text_types;
 }
 
-export const textTypeKeys = Object.keys(
-  config.text_types
-) as [string, ...string[]];
-
-export const groupTypeKeys = Object.keys(
-  config.text_group_types
-) as [string, ...string[]];
-
-export function getPrunedTextTypes(): string[] {
-  return config.pruned_text_types ?? [];
+export function getTextGroupTypes(cfg: AppConfig): Record<string, string> {
+  return cfg.text_group_types;
 }
 
-export function getPrunedSectionTypes(): string[] {
-  return config.pruned_section_types ?? [];
+export function getPrunedTextTypes(cfg: AppConfig): string[] {
+  return cfg.pruned_text_types ?? [];
 }
 
-export function getImageFilters(): {
+export function getPrunedSectionTypes(cfg: AppConfig): string[] {
+  return cfg.pruned_section_types ?? [];
+}
+
+export function getSectionTypes(cfg: AppConfig): Record<string, string> {
+  return cfg.section_types ?? {};
+}
+
+export function getImageFilters(cfg: AppConfig): {
   size?: { min_side?: number; max_side?: number };
 } {
-  return loadConfig().image_filters ?? {};
+  return cfg.image_filters ?? {};
 }
-
-export function getSectionTypes(): Record<string, string> {
-  return config.section_types ?? {};
-}
-
-export const sectionTypeKeys = Object.keys(
-  config.section_types ?? {}
-) as [string, ...string[]];

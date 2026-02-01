@@ -32,6 +32,7 @@ export function ImageClassificationPanel({
     initialClassification
   );
   const [version, setVersion] = useState(initialVersion);
+  const [latestVersion, setLatestVersion] = useState(initialVersion);
   const [versions, setVersions] = useState(initialAvailableVersions);
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,7 +43,7 @@ export function ImageClassificationPanel({
   const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
   const versionDropdownRef = useRef<HTMLDivElement>(null);
 
-  const versionLabel = version === 1 ? "original" : `v${version}`;
+  const versionLabel = `v${version}`;
 
   // Close version dropdown on outside click / escape
   useEffect(() => {
@@ -81,6 +82,7 @@ export function ImageClassificationPanel({
       const { version: newVersion, ...rest } = json;
       setData(rest as PageImageClassification);
       setVersion(newVersion);
+      setLatestVersion(newVersion);
       setVersions([1]);
       setIsDirty(false);
       router.refresh();
@@ -104,7 +106,7 @@ export function ImageClassificationPanel({
       const json = await res.json();
       setData(json.data as PageImageClassification);
       setVersion(v);
-      setIsDirty(false);
+      setIsDirty(v !== latestVersion);
     } catch {
       // ignore
     }
@@ -180,11 +182,12 @@ export function ImageClassificationPanel({
       const res = await fetch(apiBase, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version }),
+        body: JSON.stringify({ version: latestVersion }),
       });
       if (!res.ok) return;
       const json = await res.json();
       setData(json.data as PageImageClassification);
+      setVersion(latestVersion);
     } catch {
       // ignore
     }
@@ -205,6 +208,7 @@ export function ImageClassificationPanel({
       const { version: newVersion, ...rest } = json;
       setData(rest as PageImageClassification);
       setVersion(newVersion);
+      setLatestVersion(newVersion);
       setIsDirty(false);
       setPendingCrops(new Set());
       setVersions((prev) =>
@@ -223,7 +227,7 @@ export function ImageClassificationPanel({
     <button
       type="button"
       onClick={handleRerun}
-      disabled={running}
+      disabled={running || isDirty}
       className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
       title={data ? "Rerun image classification" : "Run image classification"}
     >
@@ -259,77 +263,76 @@ export function ImageClassificationPanel({
         {error && (
           <span className="text-xs font-normal text-red-200">{error}</span>
         )}
-        {isDirty ? (
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={discardEdits}
-              disabled={saving}
-              className="cursor-pointer rounded bg-amber-500 px-2 py-0.5 text-xs font-medium hover:bg-amber-400 disabled:opacity-50 transition-colors"
-            >
-              Discard
-            </button>
-            <button
-              type="button"
-              onClick={saveChanges}
-              disabled={saving}
-              className="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-70 transition-colors"
-            >
-              {saving && (
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
-                </svg>
-              )}
-              Save
-            </button>
-          </div>
-        ) : (
-          <div className="ml-auto flex items-center gap-1.5">
-            {data && versions.length > 0 && (
-              <div ref={versionDropdownRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
-                  className="cursor-pointer rounded bg-amber-500 px-1.5 py-0.5 text-xs font-medium hover:bg-amber-400 transition-colors"
-                >
-                  {versionLabel} ▾
-                </button>
-                {versionDropdownOpen && (
-                  <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-                    {versions.map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => loadVersion(v)}
-                        className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
-                      >
-                        {v === 1 ? "original" : `v${v}`}
-                      </button>
-                    ))}
-                  </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          {isDirty && (
+            <>
+              <button
+                type="button"
+                onClick={discardEdits}
+                disabled={saving}
+                className="cursor-pointer rounded bg-amber-500 px-2 py-0.5 text-xs font-medium hover:bg-amber-400 disabled:opacity-50 transition-colors"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={saveChanges}
+                disabled={saving}
+                className="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-70 transition-colors"
+              >
+                {saving && (
+                  <svg
+                    className="h-3 w-3 animate-spin"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
                 )}
-              </div>
-            )}
-            {rerunButton}
-          </div>
-        )}
+                Save
+              </button>
+            </>
+          )}
+          {data && versions.length > 0 && (
+            <div ref={versionDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+                className="cursor-pointer rounded bg-amber-500 px-1.5 py-0.5 text-xs font-medium hover:bg-amber-400 transition-colors"
+              >
+                {versionLabel} ▾
+              </button>
+              {versionDropdownOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
+                  {versions.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => loadVersion(v)}
+                      className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
+                    >
+                      {`v${v}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {rerunButton}
+        </div>
       </div>
       <div className="p-4">
         {allImageIds.length > 0 ? (

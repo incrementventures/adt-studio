@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import QueueStatus from "./queue-status";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,10 +27,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-x-hidden [--header-h:2.75rem]`}
       >
-        <header className="border-b border-slate-700/50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-lg shadow-black/20">
-          <div className="flex items-center justify-between px-4 py-3">
+        <header className="fixed inset-x-0 top-0 z-30 h-[var(--header-h)] border-b border-slate-700/50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-lg shadow-black/20">
+          <div className="flex h-full items-center justify-between px-4">
             <Link
               href="/"
               className="flex items-center gap-2.5 text-lg font-semibold tracking-tight text-white"
@@ -39,12 +40,10 @@ export default function RootLayout({
               </span>
               ADT Studio
             </Link>
-            <span className="rounded-full bg-slate-700/50 px-3 py-1 text-xs text-slate-400">
-              Book Pipeline
-            </span>
+            <QueueStatus />
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+        <main className="mx-auto max-w-7xl px-4 pb-6 pt-[calc(var(--header-h)+1.5rem)]">{children}</main>
       </body>
     </html>
   );

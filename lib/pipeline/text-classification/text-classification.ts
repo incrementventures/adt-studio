@@ -3,10 +3,10 @@ import path from "node:path";
 import { Observable } from "rxjs";
 import { cachedPromptGenerateObject } from "../cache";
 import {
-  llmPageTextClassificationSchema,
+  buildLlmTextClassificationSchema,
   type PageTextClassification,
 } from "./text-classification-schema";
-import { getTextTypes, getTextGroupTypes, getPrunedTextTypes, loadConfig } from "../../config";
+import { getTextTypes, getTextGroupTypes, getPrunedTextTypes, loadBookConfig } from "../../config";
 import {
   defineNode,
   createContext,
@@ -74,12 +74,15 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
 
             const promptName =
               ctx.config.text_classification?.prompt ?? "text_classification";
-            const textTypes = Object.entries(getTextTypes()).map(
+            const textTypes = Object.entries(getTextTypes(ctx.config)).map(
               ([key, description]) => ({ key, description })
             );
-            const textGroupTypes = Object.entries(getTextGroupTypes()).map(
+            const textGroupTypes = Object.entries(getTextGroupTypes(ctx.config)).map(
               ([key, description]) => ({ key, description })
             );
+            const textTypeKeys = Object.keys(getTextTypes(ctx.config)) as [string, ...string[]];
+            const groupTypeKeys = Object.keys(getTextGroupTypes(ctx.config)) as [string, ...string[]];
+            const llmPageTextClassificationSchema = buildLlmTextClassificationSchema(textTypeKeys, groupTypeKeys);
 
             const concurrency =
               ctx.config.text_classification?.concurrency ?? DEFAULT_CONCURRENCY;
@@ -96,6 +99,9 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
 
               const extraction =
                 await cachedPromptGenerateObject<PageTextClassification>({
+                  label: ctx.label,
+                  taskType: "text-classification",
+                  pageId: p.pageId,
                   model: resolveModel(ctx, ctx.config.text_classification?.model),
                   schema: llmPageTextClassificationSchema,
                   promptName,
@@ -105,7 +111,6 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
                     text_types: textTypes,
                     text_group_types: textGroupTypes,
                   },
-                  cacheDir: textClassificationDir,
                 });
 
               // Assign stable group IDs and default is_pruned
@@ -118,7 +123,7 @@ export const textClassificationNode: Node<PageTextClassification[]> = defineNode
               });
 
               // Mark pruned text entries based on config
-              const prunedTypes = getPrunedTextTypes();
+              const prunedTypes = getPrunedTextTypes(ctx.config);
               if (prunedTypes.length > 0) {
                 const prunedSet = new Set(prunedTypes);
                 for (const g of extraction.groups) {
@@ -174,7 +179,7 @@ export function classifyText(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<TextClassificationProgress> {
-  const config = loadConfig();
+  const config = loadBookConfig(label);
   const ctx = createContext(label, {
     config,
     outputRoot: options?.outputRoot,

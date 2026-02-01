@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Observable } from "rxjs";
 import type { WebRendering } from "./web-rendering-schema";
-import { loadConfig } from "../../config";
+import { loadBookConfig } from "../../config";
 import {
   defineNode,
   createContext,
@@ -156,6 +156,8 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
                 if (texts.length === 0 && images.length === 0) continue;
 
                 const rendering = await renderSection({
+                  label: ctx.label,
+                  pageId: p.pageId,
                   model: resolveModel(ctx, ctx.config.web_rendering?.model),
                   pageImageBase64,
                   sectionIndex: si,
@@ -163,7 +165,6 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
                   texts,
                   images,
                   promptName,
-                  cacheDir: renderingDir,
                   maxRetries: ctx.config.web_rendering?.max_retries ?? 2,
                 });
 
@@ -219,7 +220,7 @@ export function renderWebPages(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<WebRenderingProgress> {
-  const config = loadConfig();
+  const config = loadBookConfig(label);
   const ctx = createContext(label, {
     config,
     outputRoot: options?.outputRoot,

@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
+import type { z } from "zod/v4";
 import { cachedPromptGenerateObject } from "@/lib/pipeline/cache";
 import {
-  llmPageTextClassificationSchema,
   type PageTextClassification,
 } from "./text-classification-schema";
 
@@ -11,7 +11,9 @@ import {
  * and persisting the result.
  */
 export async function classifyPage(options: {
+  label: string;
   model: LanguageModel;
+  schema: z.ZodType;
   pageNumber: number;
   pageId: string;
   text: string;
@@ -21,7 +23,6 @@ export async function classifyPage(options: {
   textGroupTypes: { key: string; description: string }[];
   prunedTextTypes: string[];
   promptName: string;
-  cacheDir: string;
 }): Promise<PageTextClassification> {
   const page = {
     pageNumber: options.pageNumber,
@@ -30,8 +31,11 @@ export async function classifyPage(options: {
   };
 
   const extraction = await cachedPromptGenerateObject<PageTextClassification>({
+    label: options.label,
+    taskType: "text-classification",
+    pageId: options.pageId,
     model: options.model,
-    schema: llmPageTextClassificationSchema,
+    schema: options.schema,
     promptName: options.promptName,
     promptContext: {
       page,
@@ -39,7 +43,6 @@ export async function classifyPage(options: {
       text_types: options.textTypes,
       text_group_types: options.textGroupTypes,
     },
-    cacheDir: options.cacheDir,
   });
 
   // Assign stable group IDs and default is_pruned

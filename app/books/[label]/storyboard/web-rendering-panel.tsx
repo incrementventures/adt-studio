@@ -8,6 +8,7 @@ import {
   SectionAnnotationEditor,
   type SectionAnnotationEditorHandle,
 } from "./section-annotation-editor";
+import { usePipelineBusy } from "../use-pipeline-refresh";
 
 export interface EnrichedSection extends SectionRendering {
   version: number;
@@ -142,18 +143,23 @@ function SectionCard({
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<SectionAnnotationEditorHandle>(null);
   const [canSubmitEdit, setCanSubmitEdit] = useState(false);
+  const [savingVersion, setSavingVersion] = useState(false);
   const [version, setVersion] = useState(initialVersion);
+  const [latestVersion, setLatestVersion] = useState(initialVersion);
   const [versions, setVersions] = useState(initialVersions);
+  const [isOldVersion, setIsOldVersion] = useState(false);
   const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
   const versionDropdownRef = useRef<HTMLDivElement>(null);
 
-  const versionLabel = version === 1 ? "original" : `v${version}`;
+  const versionLabel = `v${version}`;
   const sectionId = `${pageId}_s${String(section.section_index).padStart(3, "0")}`;
 
   // Sync from parent when props change (e.g. after router.refresh())
   useEffect(() => {
     setVersion(initialVersion);
+    setLatestVersion(initialVersion);
     setVersions(initialVersions);
+    setIsOldVersion(false);
   }, [initialVersion, initialVersions]);
 
   // Close version dropdown on outside click / escape
@@ -193,9 +199,57 @@ function SectionCard({
       if (!res.ok) return;
       const json = await res.json();
       setVersion(v);
+      setIsOldVersion(v !== latestVersion);
       onSectionUpdated(json.section, v, versions);
     } catch {
       // ignore
+    }
+  }
+
+  async function discardOldVersion() {
+    try {
+      const res = await fetch(
+        `/api/books/${label}/pages/${pageId}/web-rendering/version`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sectionId, version: latestVersion }),
+        }
+      );
+      if (!res.ok) return;
+      const json = await res.json();
+      setVersion(latestVersion);
+      setIsOldVersion(false);
+      onSectionUpdated(json.section, latestVersion, versions);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function saveOldVersion() {
+    setSavingVersion(true);
+    try {
+      const res = await fetch(
+        `/api/books/${label}/pages/${pageId}/web-rendering/version`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sectionId, version }),
+        }
+      );
+      if (!res.ok) return;
+      const json = await res.json();
+      const newVersion = json.version as number;
+      const newVersions = json.versions as number[];
+      setVersion(newVersion);
+      setLatestVersion(newVersion);
+      setVersions(newVersions);
+      setIsOldVersion(false);
+      onSectionUpdated(json.section, newVersion, newVersions);
+    } catch {
+      // ignore
+    } finally {
+      setSavingVersion(false);
     }
   }
 
@@ -216,28 +270,50 @@ function SectionCard({
           {section.section_type.replace(/_/g, " ")}
         </span>
         {!isEditing && versions.length > 1 && (
-          <div ref={versionDropdownRef} className="relative ml-auto">
-            <button
-              type="button"
-              onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
-              className="cursor-pointer rounded bg-surface/60 px-1.5 py-0.5 text-xs font-medium text-muted hover:bg-surface hover:text-foreground transition-colors"
-            >
-              {versionLabel} ▾
-            </button>
-            {versionDropdownOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-                {versions.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => loadVersion(v)}
-                    className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
-                  >
-                    {v === 1 ? "original" : `v${v}`}
-                  </button>
-                ))}
-              </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            {isOldVersion && (
+              <>
+                <button
+                  type="button"
+                  onClick={discardOldVersion}
+                  disabled={savingVersion}
+                  className="cursor-pointer rounded bg-surface/60 px-2 py-0.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-50 transition-colors"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={saveOldVersion}
+                  disabled={savingVersion}
+                  className="cursor-pointer rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingVersion ? "Saving..." : "Save"}
+                </button>
+              </>
             )}
+            <div ref={versionDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+                className="cursor-pointer rounded bg-surface/60 px-1.5 py-0.5 text-xs font-medium text-muted hover:bg-surface hover:text-foreground transition-colors"
+              >
+                {versionLabel} ▾
+              </button>
+              {versionDropdownOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
+                  {versions.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => loadVersion(v)}
+                      className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
+                    >
+                      {`v${v}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
         {isEditing && (
@@ -321,6 +397,7 @@ export function WebRenderingPanel({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pipelineBusy = usePipelineBusy(pageId, "web-rendering");
   const [sections, setSections] = useState<EnrichedSection[]>(
     initialSections ?? []
   );
@@ -345,12 +422,33 @@ export function WebRenderingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const json = await res.json();
-      setSections(json.sections ?? []);
-      router.refresh();
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            const result = job.result as { sections: EnrichedSection[] };
+            setSections(result.sections ?? []);
+            setLoading(false);
+            router.refresh();
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Rendering failed");
+            setLoading(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setLoading(false);
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setLoading(false);
     }
   }
@@ -380,18 +478,43 @@ export function WebRenderingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Edit failed (${res.status})`);
       }
-      const { section: updatedSection, version: newVersion, versions: newVersions } = await res.json();
-      setSections((prev) =>
-        prev.map((s) =>
-          s.section_index === sectionIndex
-            ? { ...updatedSection, version: newVersion, versions: newVersions }
-            : s
-        )
-      );
-      setEditingSection(null);
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            const { section: updatedSection, version: newVersion, versions: newVersions } = job.result as {
+              section: EnrichedSection;
+              version: number;
+              versions: number[];
+            };
+            setSections((prev) =>
+              prev.map((s) =>
+                s.section_index === sectionIndex
+                  ? { ...updatedSection, version: newVersion, versions: newVersions }
+                  : s
+              )
+            );
+            setEditingSection(null);
+            setEditLoading(false);
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Edit failed");
+            setEditLoading(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setEditLoading(false);
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setEditLoading(false);
     }
   }
@@ -408,7 +531,7 @@ export function WebRenderingPanel({
         <button
           type="button"
           onClick={handleRerun}
-          disabled={loading}
+          disabled={loading || pipelineBusy}
           className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-slate-600 disabled:opacity-50 transition-colors"
           title={initialSections ? "Rerun web rendering" : "Run web rendering"}
         >
@@ -416,7 +539,7 @@ export function WebRenderingPanel({
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            className={`h-4 w-4 ${loading || pipelineBusy ? "animate-spin" : ""}`}
           >
             <path
               fillRule="evenodd"

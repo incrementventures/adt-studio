@@ -14,15 +14,16 @@ export function validateSectionHtml(
 ): HtmlValidationResult {
   const allowedIds = new Set([...allowedTextIds, ...allowedImageIds]);
   const errors: string[] = [];
+  const seenIds = new Set<string>();
   const doc = parseDocument(html);
 
-  walkNode(doc, allowedIds, errors);
+  walkNode(doc, allowedIds, seenIds, errors);
 
   return { valid: errors.length === 0, errors };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function walkNode(node: any, allowedIds: Set<string>, errors: string[]): void {
+function walkNode(node: any, allowedIds: Set<string>, seenIds: Set<string>, errors: string[]): void {
   if (node.type === "text") {
     if (node.data.trim().length > 0) {
       if (isInsideExemptTag(node)) return;
@@ -36,14 +37,20 @@ function walkNode(node: any, allowedIds: Set<string>, errors: string[]): void {
 
   if (node.type === "tag") {
     const dataId = node.attribs?.["data-id"];
-    if (dataId !== undefined && !allowedIds.has(dataId)) {
-      errors.push(`Unknown data-id: "${dataId}"`);
+    if (dataId !== undefined) {
+      if (!allowedIds.has(dataId)) {
+        errors.push(`Unknown data-id: "${dataId}"`);
+      } else if (seenIds.has(dataId)) {
+        errors.push(`Duplicate data-id: "${dataId}"`);
+      } else {
+        seenIds.add(dataId);
+      }
     }
   }
 
   if (node.children) {
     for (const child of node.children) {
-      walkNode(child, allowedIds, errors);
+      walkNode(child, allowedIds, seenIds, errors);
     }
   }
 }

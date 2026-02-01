@@ -3,7 +3,7 @@ import path from "node:path";
 import { Observable } from "rxjs";
 import type { PageImageClassification } from "./image-classification-schema";
 import { classifyPageImages, type ImageInput } from "./classify-page-images";
-import { loadConfig, getImageFilters } from "../../config";
+import { loadBookConfig, getImageFilters } from "../../config";
 import {
   defineNode,
   createContext,
@@ -62,7 +62,7 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
 
             const allPages = await resolveNode(pagesNode, ctx);
 
-            const sizeFilter = getImageFilters().size;
+            const sizeFilter = getImageFilters(ctx.config).size;
             const classificationDir = path.resolve(
               ctx.outputRoot,
               ctx.label,
@@ -157,7 +157,7 @@ export function classifyImages(
   label: string,
   options?: { provider?: LLMProvider; outputRoot?: string }
 ): Observable<ImageClassificationProgress> {
-  const config = loadConfig();
+  const config = loadBookConfig(label);
   const ctx = createContext(label, {
     config,
     outputRoot: options?.outputRoot,

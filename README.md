@@ -1,38 +1,117 @@
 [![Tests](https://github.com/incrementventures/adt-studio/actions/workflows/test.yml/badge.svg)](https://github.com/incrementventures/adt-studio/actions/workflows/test.yml)
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ADT Studio
 
-## Getting Started
+ADT Studio converts PDFs of learning materials (textbooks, storybooks, etc.) into **Accessible Digital Textbooks** — structured, web-renderable HTML with classified text, images, and semantic sections. It provides a web UI for uploading books, running the pipeline, reviewing results, and manually editing outputs.
 
-First, run the development server:
+## Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+The app is a Next.js application backed by per-book SQLite databases. Books are processed through a six-stage pipeline that combines PDF rasterization, rule-based image filtering, and LLM-powered extraction.
+
+### Pipeline stages
+
+1. **Extract** — Rasterizes each PDF page to PNG via MuPDF, extracts embedded images and OCR text. No LLM required.
+2. **Metadata** — Sends the first few pages to an LLM to extract title, authors, language, cover page, etc.
+3. **Image Classification** — Rule-based filtering by dimensions. Marks small/oversized images as pruned. Supports manual cropping.
+4. **Text Classification** — LLM classifies each page's text into typed, ordered groups (headings, paragraphs, stanzas, math, etc.) with pruning of headers/footers.
+5. **Page Sectioning** — LLM groups text and images into semantic sections (text-only, text-and-images, activities, etc.).
+6. **Web Rendering** — LLM renders each section as HTML. Includes validation that all text/image IDs are referenced. Supports versioning and manual editing via an annotation UI.
+
+### Storage
+
+Each book gets its own directory under `BOOKS_ROOT` (default: `books/`):
+
+```
+books/<label>/
+  <label>.db           # SQLite database (schema v5, WAL mode)
+  <label>.pdf          # Original PDF
+  config.yaml          # Per-book config overrides
+  extract/
+    pages/
+      pg001/
+        page.png       # Full page render at ~144 DPI
+        images/        # Embedded raster images
+          pg001_im001.png
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The SQLite database stores page text, image metadata with content hashes, pipeline outputs (versioned), book metadata, and an LLM call log.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Key dependencies
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Next.js 16** (App Router, React 19)
+- **Vercel AI SDK** with OpenAI, Anthropic, and Google providers
+- **MuPDF** for PDF rasterization and text extraction
+- **sharp** for image cropping
+- **better-sqlite3** for per-book storage
+- **RxJS** for the pipeline computation graph and progress streaming
+- **LiquidJS** for prompt templates with custom `{% chat %}` / `{% image %}` tags
 
-## Learn More
+## Quick start
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm install
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Create a `.env.local` with at least one LLM provider key:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+OPENAI_API_KEY=sk-...
+# and/or
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_GENERATIVE_AI_API_KEY=...
+```
 
-## Deploy on Vercel
+Start the dev server:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open http://localhost:3000 and upload a PDF. The pipeline runs automatically — extraction first, then metadata, then per-page classification and rendering.
+
+### CLI
+
+Pipeline stages can also be run from the command line:
+
+```bash
+pnpm pipeline extract <pdf_path>
+pnpm pipeline metadata <label> [--provider openai|anthropic|google]
+pnpm pipeline image-classification <label>
+pnpm pipeline text-classification <label> [--provider openai|anthropic|google]
+pnpm pipeline page-sectioning <label> [--provider openai|anthropic|google]
+```
+
+## Configuration
+
+Global defaults live in `config.yaml` at the project root. Per-book overrides go in `books/<label>/config.yaml` and are deep-merged on top.
+
+Configurable settings include text types, section types, pruning rules, image size filters, per-stage LLM model selection, concurrency, and retry counts. See `lib/config.ts` for the full schema.
+
+## Testing
+
+Run the full test suite:
+
+```bash
+pnpm test
+```
+
+Other test commands:
+
+```bash
+pnpm test:watch         # Watch mode
+pnpm test:integration   # Metadata + text-classification integration tests only
+pnpm test:recache       # Re-run LLM calls (ignores cache, requires API key)
+pnpm test:coverage      # Coverage report
+```
+
+Tests use a pre-built SQLite database at `fixtures/raven/raven.db` containing page text, image hashes, and LLM metadata for the raven fixture book. Integration tests set `BOOKS_ROOT=fixtures` so the pipeline finds this DB.
+
+### Rebuilding fixtures
+
+If you change the DB schema or fixture data, regenerate the fixture DB:
+
+```bash
+npx tsx fixtures/build-fixture-db.ts
+```
+
+This reads the existing fixture files (`text.txt`, PNGs, `metadata.json`) and populates a fresh `raven.db` with the current schema. Commit the resulting `.db` file.

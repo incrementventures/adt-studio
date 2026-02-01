@@ -9,6 +9,10 @@ const navItems = [
   { label: "Storyboard", href: "/storyboard" },
 ];
 
+const bottomItems = [
+  { label: "Logs", href: "/log" },
+];
+
 export function BookSidebar({
   label,
   title,
@@ -19,8 +23,28 @@ export function BookSidebar({
   const pathname = usePathname();
   const base = `/books/${label}`;
 
+  const renderItems = (items: typeof navItems) =>
+    items.map((item) => {
+      const href = base + item.href;
+      const active = pathname === href;
+      return (
+        <li key={item.label}>
+          <Link
+            href={href}
+            className={`block rounded px-2 py-1 ${
+              active
+                ? "bg-slate-700 font-medium text-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {item.label}
+          </Link>
+        </li>
+      );
+    });
+
   return (
-    <nav className="text-sm">
+    <nav className="flex h-full flex-col pl-6 pr-4 pt-6 text-sm">
       <Link
         href={base}
         className="mb-4 block font-semibold text-white hover:text-slate-300"
@@ -28,25 +52,13 @@ export function BookSidebar({
         {title}
       </Link>
       <ul className="space-y-1">
-        {navItems.map((item) => {
-          const href = base + item.href;
-          const active = pathname === href;
-          return (
-            <li key={item.label}>
-              <Link
-                href={href}
-                className={`block rounded px-2 py-1 ${
-                  active
-                    ? "bg-slate-700 font-medium text-white"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {item.label}
-              </Link>
-            </li>
-          );
-        })}
+        {renderItems(navItems)}
       </ul>
+      <div className="mt-auto border-t border-slate-700 py-3">
+        <ul className="space-y-1">
+          {renderItems(bottomItems)}
+        </ul>
+      </div>
     </nav>
   );
 }

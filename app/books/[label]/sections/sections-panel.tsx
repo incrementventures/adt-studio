@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { PageSectioning } from "@/lib/books";
 import { TEXT_TYPE_COLORS } from "../extract/text-type-badge";
 import { LightboxImage } from "../extract/image-lightbox";
+import { usePipelineBusy } from "../use-pipeline-refresh";
 
 interface TextEntry {
   text_type: string;
@@ -56,6 +57,7 @@ export function SectionsPanel({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pipelineBusy = usePipelineBusy(pageId, "sections");
 
   const sectioning = initialSectioning;
 
@@ -71,11 +73,31 @@ export function SectionsPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      await res.json();
-      router.refresh();
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            setLoading(false);
+            router.refresh();
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Sectioning failed");
+            setLoading(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setLoading(false);
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setLoading(false);
     }
   }
@@ -105,7 +127,7 @@ export function SectionsPanel({
         <button
           type="button"
           onClick={handleRerun}
-          disabled={loading}
+          disabled={loading || pipelineBusy}
           className="ml-auto cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-teal-500 disabled:opacity-50 transition-colors"
           title={sectioning ? "Rerun sectioning" : "Run sectioning"}
         >
@@ -113,7 +135,7 @@ export function SectionsPanel({
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            className={`h-4 w-4 ${loading || pipelineBusy ? "animate-spin" : ""}`}
           >
             <path
               fillRule="evenodd"

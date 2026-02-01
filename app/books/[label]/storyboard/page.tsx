@@ -8,11 +8,12 @@ import {
   listImageClassificationVersions,
   getWebRendering,
 } from "@/lib/books";
-import { textTypeKeys, groupTypeKeys, getSectionTypes } from "@/lib/config";
+import { loadBookConfig, getSectionTypes } from "@/lib/config";
 import { TextClassificationPanel } from "../extract/text-classification-panel";
 import { ImageClassificationPanel } from "../extract/image-classification-panel";
 import { SectionsPanel } from "../sections/sections-panel";
 import { WebRenderingPanel } from "./web-rendering-panel";
+import { PipelineSSEProvider } from "../use-pipeline-refresh";
 
 export default async function StoryboardPage({
   params,
@@ -21,9 +22,13 @@ export default async function StoryboardPage({
 }) {
   const { label } = await params;
   const pages = listPages(label);
-  const sectionTypes = getSectionTypes();
+  const bookConfig = loadBookConfig(label);
+  const textTypeKeys = Object.keys(bookConfig.text_types);
+  const groupTypeKeys = Object.keys(bookConfig.text_group_types);
+  const sectionTypes = getSectionTypes(bookConfig);
 
   return (
+    <PipelineSSEProvider label={label}>
     <div>
       <div>
         {pages.map((page, i) => {
@@ -93,5 +98,6 @@ export default async function StoryboardPage({
         })}
       </div>
     </div>
+    </PipelineSSEProvider>
   );
 }

@@ -1,23 +1,16 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
-import path from "node:path";
 import {
-  getBooksRoot,
-  getBookMetadata,
   getLatestTextClassificationPath,
   getTextClassificationVersion,
   listTextClassificationVersions,
-  getCurrentTextClassificationVersion,
-  setCurrentTextClassificationVersion,
   resolvePageImagePath,
   getPage,
+  putNodeData,
   type PageTextClassification,
 } from "@/lib/books";
-import { loadConfig, textTypeKeys, groupTypeKeys, getTextTypes, getTextGroupTypes, getPrunedTextTypes } from "@/lib/config";
-import { resolveBookPaths } from "@/lib/pipeline/types";
-import { createContext, resolveModel } from "@/lib/pipeline/node";
-import type { LLMProvider } from "@/lib/pipeline/node";
-import { classifyPage } from "@/lib/pipeline/text-classification/classify-page";
+import { loadBookConfig } from "@/lib/config";
+import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
@@ -40,7 +33,7 @@ export async function GET(
     );
   }
 
-  const current = getCurrentTextClassificationVersion(label, pageId);
+  const current = versions[versions.length - 1];
   const data = getTextClassificationVersion(label, pageId, current);
   if (!data) {
     return NextResponse.json(
@@ -62,11 +55,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid params" }, { status: 400 });
   }
 
-  const config = loadConfig();
-  const booksRoot = getBooksRoot();
-  const paths = resolveBookPaths(label, booksRoot);
-
-  // Load page image
+  // Validate prerequisites
   const pageImagePath = resolvePageImagePath(label, pageId);
   if (!fs.existsSync(pageImagePath)) {
     return NextResponse.json(
@@ -74,71 +63,16 @@ export async function POST(
       { status: 404 }
     );
   }
-  const imageBase64 = fs.readFileSync(pageImagePath).toString("base64");
 
-  // Load page text
-  const page = getPage(label, pageId);
-  if (!page) {
+  if (!getPage(label, pageId)) {
     return NextResponse.json(
       { error: "Page not found" },
       { status: 404 }
     );
   }
 
-  // Get language from metadata
-  const metadata = getBookMetadata(label);
-  const language = metadata?.language_code ?? "en";
-
-  // Resolve model
-  const ctx = createContext(label, {
-    config,
-    outputRoot: booksRoot,
-    provider: (config.provider as LLMProvider | undefined) ?? "openai",
-  });
-  const model = resolveModel(ctx, config.text_classification?.model);
-
-  const promptName = config.text_classification?.prompt ?? "text_classification";
-  const textClassificationDir = paths.textClassificationDir;
-  fs.mkdirSync(textClassificationDir, { recursive: true });
-
-  const textTypes = Object.entries(getTextTypes()).map(
-    ([key, description]) => ({ key, description })
-  );
-  const textGroupTypes = Object.entries(getTextGroupTypes()).map(
-    ([key, description]) => ({ key, description })
-  );
-
-  // Parse page number from pageId (pg001 -> 1)
-  const pageNumber = parseInt(pageId.replace("pg", ""), 10);
-
-  const classification = await classifyPage({
-    model,
-    pageNumber,
-    pageId,
-    text: page.rawText,
-    imageBase64,
-    language,
-    textTypes,
-    textGroupTypes,
-    prunedTextTypes: getPrunedTextTypes(),
-    promptName,
-    cacheDir: textClassificationDir,
-  });
-
-  // Write result to disk as the base file (overwrites previous)
-  fs.writeFileSync(
-    path.join(textClassificationDir, `${pageId}.json`),
-    JSON.stringify(classification, null, 2) + "\n"
-  );
-
-  // Reset version tracking — remove versioned files and current pointer
-  for (const f of fs.readdirSync(textClassificationDir)) {
-    if (f.startsWith(`${pageId}.v`) || f === `${pageId}.current`) {
-      fs.unlinkSync(path.join(textClassificationDir, f));
-    }
-  }
-
-  return NextResponse.json({ version: 1, ...classification });
+  const jobId = queue.enqueue("text-classification", label, { pageId });
+  return NextResponse.json({ jobId });
 }
 
 export async function PUT(
@@ -169,8 +103,6 @@ export async function PUT(
     );
   }
 
-  setCurrentTextClassificationVersion(label, pageId, version);
-
   const data = getTextClassificationVersion(label, pageId, version);
   return NextResponse.json({ versions, current: version, data });
 }
@@ -200,14 +132,7 @@ export async function PATCH(
     const data: PageTextClassification = body.data;
 
     const nextVersion = latest.version + 1;
-    const paths = resolveBookPaths(label, getBooksRoot());
-    const newFile = path.join(
-      paths.textClassificationDir,
-      `${pageId}.v${String(nextVersion).padStart(3, "0")}.json`
-    );
-
-    fs.writeFileSync(newFile, JSON.stringify(data, null, 2), "utf-8");
-    setCurrentTextClassificationVersion(label, pageId, nextVersion);
+    putNodeData(label, "text-classification", pageId, nextVersion, data);
 
     return NextResponse.json({ version: nextVersion, ...data });
   }
@@ -240,6 +165,10 @@ export async function PATCH(
       { status: 400 }
     );
   }
+
+  const bookConfig = loadBookConfig(label);
+  const textTypeKeys = Object.keys(bookConfig.text_types);
+  const groupTypeKeys = Object.keys(bookConfig.text_group_types);
 
   if (hasTextType && !textTypeKeys.includes(textType)) {
     return NextResponse.json(
@@ -298,14 +227,7 @@ export async function PATCH(
   }
 
   const nextVersion = latest.version + 1;
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const newFile = path.join(
-    paths.textClassificationDir,
-    `${pageId}.v${String(nextVersion).padStart(3, "0")}.json`
-  );
-
-  fs.writeFileSync(newFile, JSON.stringify(data, null, 2), "utf-8");
-  setCurrentTextClassificationVersion(label, pageId, nextVersion);
+  putNodeData(label, "text-classification", pageId, nextVersion, data);
 
   return NextResponse.json({ version: nextVersion, ...data });
 }

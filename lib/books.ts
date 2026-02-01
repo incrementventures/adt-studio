@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { getDb } from "./db";
 import { resolveBookPaths } from "./pipeline/types";
 import { bookMetadataSchema, type BookMetadata } from "./pipeline/metadata/metadata-schema";
 import type { PdfMetadata } from "./pipeline/extract/extract";
@@ -34,6 +35,172 @@ export interface BookSummary {
   pageCount: number;
 }
 
+// ---------------------------------------------------------------------------
+// Generic versioned-node helpers (private)
+// ---------------------------------------------------------------------------
+
+function listVersions(label: string, node: string, itemId: string): number[] {
+  const db = getDb(label);
+  const rows = db
+    .prepare(
+      "SELECT version FROM node_data WHERE node = ? AND item_id = ? ORDER BY version"
+    )
+    .all(node, itemId) as { version: number }[];
+  return rows.map((r) => r.version);
+}
+
+function getVersionData<T>(
+  label: string,
+  node: string,
+  itemId: string,
+  version: number
+): T | null {
+  const db = getDb(label);
+  const row = db
+    .prepare(
+      "SELECT data FROM node_data WHERE node = ? AND item_id = ? AND version = ?"
+    )
+    .get(node, itemId, version) as { data: string } | undefined;
+  if (!row) return null;
+  return JSON.parse(row.data) as T;
+}
+
+function getLatestVersion(
+  label: string,
+  node: string,
+  itemId: string
+): { version: number } | null {
+  const versions = listVersions(label, node, itemId);
+  if (versions.length === 0) return null;
+  return { version: versions[versions.length - 1] };
+}
+
+// ---------------------------------------------------------------------------
+// Write helpers
+// ---------------------------------------------------------------------------
+
+export function putBookMetadata(
+  label: string,
+  source: "stub" | "llm",
+  data: BookMetadata
+): void {
+  const db = getDb(label);
+  db.prepare(
+    `INSERT INTO book_metadata (source, data)
+     VALUES (?, ?)
+     ON CONFLICT (source) DO UPDATE SET data = excluded.data`
+  ).run(source, JSON.stringify(data));
+}
+
+export function deleteBookMetadata(
+  label: string,
+  source: "stub" | "llm"
+): void {
+  const db = getDb(label);
+  db.prepare("DELETE FROM book_metadata WHERE source = ?").run(source);
+}
+
+export function putPdfMetadata(label: string, data: PdfMetadata): void {
+  const db = getDb(label);
+  db.prepare(
+    `INSERT INTO pdf_metadata (id, data)
+     VALUES (1, ?)
+     ON CONFLICT (id) DO UPDATE SET data = excluded.data`
+  ).run(JSON.stringify(data));
+}
+
+export function putPageText(
+  label: string,
+  pageId: string,
+  pageNumber: number,
+  text: string
+): void {
+  const db = getDb(label);
+  db.prepare(
+    `INSERT INTO pages (page_id, page_number, text)
+     VALUES (?, ?, ?)
+     ON CONFLICT (page_id) DO UPDATE SET page_number = excluded.page_number, text = excluded.text`
+  ).run(pageId, pageNumber, text);
+}
+
+export function putImage(
+  label: string,
+  imageId: string,
+  pageId: string,
+  imagePath: string,
+  hash: string,
+  width: number,
+  height: number,
+  source: "page" | "extract" | "crop"
+): void {
+  const db = getDb(label);
+  db.prepare(
+    `INSERT INTO images (image_id, page_id, path, hash, width, height, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (image_id) DO UPDATE SET
+       page_id = excluded.page_id,
+       path = excluded.path,
+       hash = excluded.hash,
+       width = excluded.width,
+       height = excluded.height,
+       source = excluded.source`
+  ).run(imageId, pageId, imagePath, hash, width, height, source);
+}
+
+export function getImageByHash(label: string, hash: string): string | null {
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT path FROM images WHERE hash = ? LIMIT 1")
+    .get(hash) as { path: string } | undefined;
+  return row?.path ?? null;
+}
+
+export function putNodeData(
+  label: string,
+  node: string,
+  itemId: string,
+  version: number,
+  data: unknown
+): void {
+  const db = getDb(label);
+  db.prepare(
+    `INSERT INTO node_data (node, item_id, version, data)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (node, item_id, version) DO UPDATE SET data = excluded.data`
+  ).run(node, itemId, version, JSON.stringify(data));
+}
+
+export function resetNodeVersions(
+  label: string,
+  node: string,
+  itemId: string
+): void {
+  const db = getDb(label);
+  db.prepare(
+    "DELETE FROM node_data WHERE node = ? AND item_id = ? AND version > 1"
+  ).run(node, itemId);
+}
+
+export function appendLlmLog(label: string, entry: unknown): void {
+  const db = getDb(label);
+  const e = entry as { timestamp?: string };
+  const timestamp = e.timestamp ?? new Date().toISOString();
+  db.prepare("INSERT INTO llm_log (timestamp, data) VALUES (?, ?)").run(
+    timestamp,
+    JSON.stringify(entry)
+  );
+  // Trim to 250 rows (keep newest)
+  db.prepare(
+    `DELETE FROM llm_log WHERE id NOT IN (
+       SELECT id FROM llm_log ORDER BY id DESC LIMIT 250
+     )`
+  ).run();
+}
+
+// ---------------------------------------------------------------------------
+// Book-level reads
+// ---------------------------------------------------------------------------
+
 export function listBooks(): BookSummary[] {
   const root = getBooksRoot();
   if (!fs.existsSync(root)) return [];
@@ -44,41 +211,55 @@ export function listBooks(): BookSummary[] {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const label = entry.name;
-    const paths = resolveBookPaths(label, root);
-    if (!fs.existsSync(paths.metadataFile) && !fs.existsSync(paths.stubMetadataFile)) continue;
+    const dbPath = path.join(root, label, `${label}.db`);
+    if (!fs.existsSync(dbPath)) continue;
 
-    const metadata = getBookMetadata(label);
-    if (!metadata) continue;
+    try {
+      const metadata = getBookMetadata(label);
+      if (!metadata) continue;
 
-    const pageCount = countPages(paths.pagesDir);
-    books.push({ label, metadata, pageCount });
+      const paths = resolveBookPaths(label, root);
+      const pageCount = countPages(paths.pagesDir);
+      books.push({ label, metadata, pageCount });
+    } catch {
+      // Skip books with incompatible DB schemas
+    }
   }
 
   return books.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export function getBookMetadata(label: string): BookMetadata | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-
-  // Prefer metadata node output, fall back to extract stub
-  const file = fs.existsSync(paths.metadataFile)
-    ? paths.metadataFile
-    : fs.existsSync(paths.stubMetadataFile)
-      ? paths.stubMetadataFile
-      : null;
-  if (!file) return null;
-
-  const raw = JSON.parse(fs.readFileSync(file, "utf-8"));
+  const db = getDb(label);
+  // Prefer LLM metadata, fall back to stub
+  const row = db
+    .prepare(
+      `SELECT data FROM book_metadata
+       WHERE source = 'llm'
+       UNION ALL
+       SELECT data FROM book_metadata
+       WHERE source = 'stub'
+       LIMIT 1`
+    )
+    .get() as { data: string } | undefined;
+  if (!row) return null;
+  const raw = JSON.parse(row.data);
   const result = bookMetadataSchema.safeParse(raw);
   return result.success ? result.data : null;
 }
 
 export function getPdfMetadata(label: string): PdfMetadata | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const file = path.join(paths.extractDir, "metadata.json");
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, "utf-8")) as PdfMetadata;
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT data FROM pdf_metadata WHERE id = 1")
+    .get() as { data: string } | undefined;
+  if (!row) return null;
+  return JSON.parse(row.data) as PdfMetadata;
 }
+
+// ---------------------------------------------------------------------------
+// Page listing
+// ---------------------------------------------------------------------------
 
 export interface PageSummary {
   pageId: string;
@@ -95,63 +276,32 @@ export function listPages(label: string): PageSummary[] {
     .readdirSync(paths.pagesDir)
     .filter((d) => /^pg\d{3}$/.test(d))
     .sort()
-    .map((pageId) => buildPageSummary(paths.pagesDir, pageId));
+    .map((pageId) => buildPageSummary(label, paths.pagesDir, pageId));
 }
 
 export function getPage(label: string, pageId: string): PageSummary | null {
   const paths = resolveBookPaths(label, getBooksRoot());
   const pageDir = path.join(paths.pagesDir, pageId);
   if (!fs.existsSync(pageDir)) return null;
-  return buildPageSummary(paths.pagesDir, pageId);
+  return buildPageSummary(label, paths.pagesDir, pageId);
 }
+
+// ---------------------------------------------------------------------------
+// Text classification
+// ---------------------------------------------------------------------------
 
 export function getLatestTextClassificationPath(
   label: string,
   pageId: string
-): { filePath: string; version: number } | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.textClassificationDir;
-  const baseFile = path.join(dir, `${pageId}.json`);
-  if (!fs.existsSync(baseFile)) return null;
-
-  if (!fs.existsSync(dir)) return null;
-  const versionRe = new RegExp(`^${pageId}\\.v(\\d{3})\\.json$`);
-  let maxVersion = 0;
-  for (const f of fs.readdirSync(dir)) {
-    const m = versionRe.exec(f);
-    if (m) {
-      const v = parseInt(m[1], 10);
-      if (v > maxVersion) maxVersion = v;
-    }
-  }
-
-  if (maxVersion === 0) {
-    return { filePath: baseFile, version: 1 };
-  }
-
-  const versionedFile = path.join(
-    dir,
-    `${pageId}.v${String(maxVersion).padStart(3, "0")}.json`
-  );
-  return { filePath: versionedFile, version: maxVersion };
+): { version: number } | null {
+  return getLatestVersion(label, "text-classification", pageId);
 }
 
 export function listTextClassificationVersions(
   label: string,
   pageId: string
 ): number[] {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.textClassificationDir;
-  const baseFile = path.join(dir, `${pageId}.json`);
-  if (!fs.existsSync(baseFile)) return [];
-
-  const versions = [1];
-  const versionRe = new RegExp(`^${pageId}\\.v(\\d{3})\\.json$`);
-  for (const f of fs.readdirSync(dir)) {
-    const m = versionRe.exec(f);
-    if (m) versions.push(parseInt(m[1], 10));
-  }
-  return [...new Set(versions)].sort((a, b) => a - b);
+  return listVersions(label, "text-classification", pageId);
 }
 
 export function getTextClassificationVersion(
@@ -159,42 +309,11 @@ export function getTextClassificationVersion(
   pageId: string,
   version: number
 ): PageTextClassification | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.textClassificationDir;
-  const filePath =
-    version === 1
-      ? path.join(dir, `${pageId}.json`)
-      : path.join(dir, `${pageId}.v${String(version).padStart(3, "0")}.json`);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageTextClassification;
-}
-
-export function getCurrentTextClassificationVersion(
-  label: string,
-  pageId: string
-): number {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const currentFile = path.join(paths.textClassificationDir, `${pageId}.current`);
-  if (fs.existsSync(currentFile)) {
-    const content = fs.readFileSync(currentFile, "utf-8").trim();
-    const v = parseInt(content, 10);
-    if (!isNaN(v)) return v;
-  }
-  // Default to latest version
-  const versions = listTextClassificationVersions(label, pageId);
-  return versions.length > 0 ? versions[versions.length - 1] : 1;
-}
-
-export function setCurrentTextClassificationVersion(
-  label: string,
-  pageId: string,
-  version: number
-): void {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  fs.writeFileSync(
-    path.join(paths.textClassificationDir, `${pageId}.current`),
-    String(version),
-    "utf-8"
+  return getVersionData<PageTextClassification>(
+    label,
+    "text-classification",
+    pageId,
+    version
   );
 }
 
@@ -205,11 +324,15 @@ export function getTextClassification(
   const versions = listTextClassificationVersions(label, pageId);
   if (versions.length === 0) return null;
 
-  const current = getCurrentTextClassificationVersion(label, pageId);
-  const data = getTextClassificationVersion(label, pageId, current);
+  const latest = versions[versions.length - 1];
+  const data = getTextClassificationVersion(label, pageId, latest);
   if (!data) return null;
-  return { data, version: current };
+  return { data, version: latest };
 }
+
+// ---------------------------------------------------------------------------
+// Image paths (stay on disk)
+// ---------------------------------------------------------------------------
 
 export function resolvePageImagePath(label: string, pageId: string): string {
   const paths = resolveBookPaths(label, getBooksRoot());
@@ -224,14 +347,12 @@ export function resolveExtractedImagePath(
   const booksRoot = getBooksRoot();
   const paths = resolveBookPaths(label, booksRoot);
 
-  // Look up path from classification entry
   const classification = getImageClassification(label, pageId);
   const entry = classification?.data.images.find((i) => i.image_id === imageId);
   if (entry?.path) {
     return path.join(paths.bookDir, entry.path);
   }
 
-  // Fallback for images without classification data
   return path.join(paths.pagesDir, pageId, "images", `${imageId}.png`);
 }
 
@@ -242,53 +363,22 @@ export function resolveCoverImagePath(label: string): string | null {
   return resolvePageImagePath(label, pageId);
 }
 
+// ---------------------------------------------------------------------------
+// Image classification
+// ---------------------------------------------------------------------------
+
 export function getLatestImageClassificationPath(
   label: string,
   pageId: string
-): { filePath: string; version: number } | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.imageClassificationDir;
-  const baseFile = path.join(dir, `${pageId}.json`);
-  if (!fs.existsSync(baseFile)) return null;
-
-  if (!fs.existsSync(dir)) return null;
-  const versionRe = new RegExp(`^${pageId}\\.v(\\d{3})\\.json$`);
-  let maxVersion = 0;
-  for (const f of fs.readdirSync(dir)) {
-    const m = versionRe.exec(f);
-    if (m) {
-      const v = parseInt(m[1], 10);
-      if (v > maxVersion) maxVersion = v;
-    }
-  }
-
-  if (maxVersion === 0) {
-    return { filePath: baseFile, version: 1 };
-  }
-
-  const versionedFile = path.join(
-    dir,
-    `${pageId}.v${String(maxVersion).padStart(3, "0")}.json`
-  );
-  return { filePath: versionedFile, version: maxVersion };
+): { version: number } | null {
+  return getLatestVersion(label, "image-classification", pageId);
 }
 
 export function listImageClassificationVersions(
   label: string,
   pageId: string
 ): number[] {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.imageClassificationDir;
-  const baseFile = path.join(dir, `${pageId}.json`);
-  if (!fs.existsSync(baseFile)) return [];
-
-  const versions = [1];
-  const versionRe = new RegExp(`^${pageId}\\.v(\\d{3})\\.json$`);
-  for (const f of fs.readdirSync(dir)) {
-    const m = versionRe.exec(f);
-    if (m) versions.push(parseInt(m[1], 10));
-  }
-  return [...new Set(versions)].sort((a, b) => a - b);
+  return listVersions(label, "image-classification", pageId);
 }
 
 export function getImageClassificationVersion(
@@ -296,41 +386,11 @@ export function getImageClassificationVersion(
   pageId: string,
   version: number
 ): PageImageClassification | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.imageClassificationDir;
-  const filePath =
-    version === 1
-      ? path.join(dir, `${pageId}.json`)
-      : path.join(dir, `${pageId}.v${String(version).padStart(3, "0")}.json`);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageImageClassification;
-}
-
-export function getCurrentImageClassificationVersion(
-  label: string,
-  pageId: string
-): number {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const currentFile = path.join(paths.imageClassificationDir, `${pageId}.current`);
-  if (fs.existsSync(currentFile)) {
-    const content = fs.readFileSync(currentFile, "utf-8").trim();
-    const v = parseInt(content, 10);
-    if (!isNaN(v)) return v;
-  }
-  const versions = listImageClassificationVersions(label, pageId);
-  return versions.length > 0 ? versions[versions.length - 1] : 1;
-}
-
-export function setCurrentImageClassificationVersion(
-  label: string,
-  pageId: string,
-  version: number
-): void {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  fs.writeFileSync(
-    path.join(paths.imageClassificationDir, `${pageId}.current`),
-    String(version),
-    "utf-8"
+  return getVersionData<PageImageClassification>(
+    label,
+    "image-classification",
+    pageId,
+    version
   );
 }
 
@@ -341,29 +401,24 @@ export function getImageClassification(
   const versions = listImageClassificationVersions(label, pageId);
   if (versions.length === 0) return null;
 
-  const current = getCurrentImageClassificationVersion(label, pageId);
-  const data = getImageClassificationVersion(label, pageId, current);
+  const latest = versions[versions.length - 1];
+  const data = getImageClassificationVersion(label, pageId, latest);
   if (!data) return null;
-  return { data, version: current };
+  return { data, version: latest };
 }
 
-/**
- * Load extracted images as base64, excluding any pruned by image classification.
- * When classification data exists, uses entry paths to resolve files.
- * Falls back to scanning imagesDir when no classification is available.
- * @param bookDir  Absolute path to the book root directory.
- * @param imagesDir  Path to the extraction images directory.
- * @param imageClassification  Pre-loaded classification (if null/undefined, no filtering is applied).
- */
+// ---------------------------------------------------------------------------
+// Unpruned images (on-disk)
+// ---------------------------------------------------------------------------
+
 export function loadUnprunedImagesFromDir(
   bookDir: string,
   imagesDir: string,
-  imageClassification?: PageImageClassification | null,
+  imageClassification?: PageImageClassification | null
 ): { image_id: string; imageBase64: string }[] {
   const images: { image_id: string; imageBase64: string }[] = [];
 
   if (imageClassification) {
-    // Use classification entries — each has a path relative to bookDir
     for (const entry of imageClassification.images) {
       if (entry.is_pruned) continue;
       const filePath = path.join(bookDir, entry.path);
@@ -372,14 +427,15 @@ export function loadUnprunedImagesFromDir(
       images.push({ image_id: entry.image_id, imageBase64: imgBase64 });
     }
   } else if (fs.existsSync(imagesDir)) {
-    // No classification — load all images from extraction dir
     const imageFiles = fs
       .readdirSync(imagesDir)
       .filter((f) => /^pg\d{3}_im\d{3}\.png$/i.test(f))
       .sort();
     for (const imgFile of imageFiles) {
       const imageId = imgFile.replace(/\.png$/i, "");
-      const imgBase64 = fs.readFileSync(path.join(imagesDir, imgFile)).toString("base64");
+      const imgBase64 = fs
+        .readFileSync(path.join(imagesDir, imgFile))
+        .toString("base64");
       images.push({ image_id: imageId, imageBase64: imgBase64 });
     }
   }
@@ -387,10 +443,6 @@ export function loadUnprunedImagesFromDir(
   return images;
 }
 
-/**
- * Load extracted images for a page as base64, excluding any pruned by image classification.
- * Convenience wrapper that resolves paths from label/pageId.
- */
 export function loadUnprunedImages(
   label: string,
   pageId: string
@@ -401,36 +453,36 @@ export function loadUnprunedImages(
   return loadUnprunedImagesFromDir(paths.bookDir, imagesDir, result?.data);
 }
 
+// ---------------------------------------------------------------------------
+// Page sectioning
+// ---------------------------------------------------------------------------
+
 export function getPageSectioning(
   label: string,
   pageId: string
 ): PageSectioning | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const filePath = path.join(paths.pageSectioningDir, `${pageId}.json`);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as PageSectioning;
+  return getVersionData<PageSectioning>(
+    label,
+    "page-sectioning",
+    pageId,
+    1
+  );
 }
 
 export { type PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 export { type PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
 export { type SectionRendering, type WebRendering } from "./pipeline/web-rendering/web-rendering-schema";
+export { type LlmLogEntry } from "./pipeline/llm-log";
+
+// ---------------------------------------------------------------------------
+// Web rendering
+// ---------------------------------------------------------------------------
 
 export function listWebRenderingVersions(
   label: string,
   sectionId: string
 ): number[] {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.webRenderingDir;
-  const baseFile = path.join(dir, `${sectionId}.json`);
-  if (!fs.existsSync(baseFile)) return [];
-
-  const versions = [1];
-  const versionRe = new RegExp(`^${sectionId}\\.v(\\d{3})\\.json$`);
-  for (const f of fs.readdirSync(dir)) {
-    const m = versionRe.exec(f);
-    if (m) versions.push(parseInt(m[1], 10));
-  }
-  return [...new Set(versions)].sort((a, b) => a - b);
+  return listVersions(label, "web-rendering", sectionId);
 }
 
 export function getWebRenderingVersion(
@@ -438,41 +490,11 @@ export function getWebRenderingVersion(
   sectionId: string,
   version: number
 ): SectionRendering | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.webRenderingDir;
-  const filePath =
-    version === 1
-      ? path.join(dir, `${sectionId}.json`)
-      : path.join(dir, `${sectionId}.v${String(version).padStart(3, "0")}.json`);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf-8")) as SectionRendering;
-}
-
-export function getCurrentWebRenderingVersion(
-  label: string,
-  sectionId: string
-): number {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const currentFile = path.join(paths.webRenderingDir, `${sectionId}.current`);
-  if (fs.existsSync(currentFile)) {
-    const content = fs.readFileSync(currentFile, "utf-8").trim();
-    const v = parseInt(content, 10);
-    if (!isNaN(v)) return v;
-  }
-  const versions = listWebRenderingVersions(label, sectionId);
-  return versions.length > 0 ? versions[versions.length - 1] : 1;
-}
-
-export function setCurrentWebRenderingVersion(
-  label: string,
-  sectionId: string,
-  version: number
-): void {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  fs.writeFileSync(
-    path.join(paths.webRenderingDir, `${sectionId}.current`),
-    String(version),
-    "utf-8"
+  return getVersionData<SectionRendering>(
+    label,
+    "web-rendering",
+    sectionId,
+    version
   );
 }
 
@@ -485,40 +507,64 @@ export function getWebRendering(
   label: string,
   pageId: string
 ): { sections: EnrichedSectionRendering[] } | null {
-  const paths = resolveBookPaths(label, getBooksRoot());
-  const dir = paths.webRenderingDir;
-  if (!fs.existsSync(dir)) return null;
+  const db = getDb(label);
 
-  // Scan for base files matching {pageId}_s*.json (not versioned)
-  const sectionRe = new RegExp(`^${pageId}_s(\\d{3})\\.json$`);
-  const sectionIds: string[] = [];
-  for (const f of fs.readdirSync(dir)) {
-    const m = sectionRe.exec(f);
-    if (m) sectionIds.push(`${pageId}_s${m[1]}`);
-  }
+  // Find all section items for this page
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT item_id FROM node_data
+       WHERE node = 'web-rendering' AND item_id LIKE ? || '_s%'
+       ORDER BY item_id`
+    )
+    .all(pageId) as { item_id: string }[];
 
-  if (sectionIds.length === 0) return null;
-
-  sectionIds.sort();
+  if (rows.length === 0) return null;
 
   const sections: EnrichedSectionRendering[] = [];
-  for (const sectionId of sectionIds) {
+  for (const row of rows) {
+    const sectionId = row.item_id;
     const versions = listWebRenderingVersions(label, sectionId);
-    const current = getCurrentWebRenderingVersion(label, sectionId);
-    const data = getWebRenderingVersion(label, sectionId, current);
+    if (versions.length === 0) continue;
+    const latest = versions[versions.length - 1];
+    const data = getWebRenderingVersion(label, sectionId, latest);
     if (!data) continue;
-    sections.push({ ...data, version: current, versions });
+    sections.push({ ...data, version: latest, versions });
   }
 
   return sections.length > 0 ? { sections } : null;
 }
+
+// ---------------------------------------------------------------------------
+// LLM log
+// ---------------------------------------------------------------------------
+
+export function getLlmLog(
+  label: string,
+  limit = 500
+): import("./pipeline/llm-log").LlmLogEntry[] {
+  const db = getDb(label);
+  const rows = db
+    .prepare("SELECT data FROM llm_log ORDER BY id DESC LIMIT ?")
+    .all(limit) as { data: string }[];
+  return rows.map(
+    (r) => JSON.parse(r.data) as import("./pipeline/llm-log").LlmLogEntry
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
 function countPages(pagesDir: string): number {
   if (!fs.existsSync(pagesDir)) return 0;
   return fs.readdirSync(pagesDir).filter((d) => /^pg\d{3}$/.test(d)).length;
 }
 
-function buildPageSummary(pagesDir: string, pageId: string): PageSummary {
+function buildPageSummary(
+  label: string,
+  pagesDir: string,
+  pageId: string
+): PageSummary {
   const pageDir = path.join(pagesDir, pageId);
   const imagesDir = path.join(pageDir, "images");
   const imageIds: string[] = [];
@@ -532,10 +578,12 @@ function buildPageSummary(pagesDir: string, pageId: string): PageSummary {
     imageIds.sort();
   }
 
-  const textFile = path.join(pageDir, "text.txt");
-  const rawText = fs.existsSync(textFile)
-    ? fs.readFileSync(textFile, "utf-8")
-    : "";
+  // Read rawText from DB
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT text FROM pages WHERE page_id = ?")
+    .get(pageId) as { text: string } | undefined;
+  const rawText = row?.text ?? "";
 
   return {
     pageId,

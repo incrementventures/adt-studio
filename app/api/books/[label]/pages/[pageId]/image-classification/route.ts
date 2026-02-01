@@ -7,12 +7,14 @@ import {
   getPage,
   listImageClassificationVersions,
   getImageClassificationVersion,
-  getCurrentImageClassificationVersion,
-  setCurrentImageClassificationVersion,
   getLatestImageClassificationPath,
+  putNodeData,
+  resetNodeVersions,
+  putImage,
 } from "@/lib/books";
 import type { PageImageClassification } from "@/lib/pipeline/image-classification/image-classification-schema";
-import { getImageFilters } from "@/lib/config";
+import { hashBuffer } from "@/lib/pipeline/llm-log";
+import { loadBookConfig, getImageFilters } from "@/lib/config";
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import {
   classifyPageImages,
@@ -40,7 +42,7 @@ export async function GET(
     );
   }
 
-  const current = getCurrentImageClassificationVersion(label, pageId);
+  const current = versions[versions.length - 1];
   const data = getImageClassificationVersion(label, pageId, current);
   if (!data) {
     return NextResponse.json(
@@ -89,7 +91,7 @@ export async function POST(
     }
   }
 
-  const sizeFilter = getImageFilters().size;
+  const sizeFilter = getImageFilters(loadBookConfig(label)).size;
   const classification = classifyPageImages(imageInputs, sizeFilter);
 
   // Prepend the full page image as a pruned entry (available for cropping)
@@ -107,19 +109,11 @@ export async function POST(
     });
   }
 
-  // Write to disk as base file (overwrites previous)
-  fs.mkdirSync(paths.imageClassificationDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(paths.imageClassificationDir, `${pageId}.json`),
-    JSON.stringify(classification, null, 2) + "\n"
-  );
+  // Write to DB as version 1
+  putNodeData(label, "image-classification", pageId, 1, classification);
 
-  // Reset version tracking — remove versioned files and current pointer
-  for (const f of fs.readdirSync(paths.imageClassificationDir)) {
-    if (f.startsWith(`${pageId}.v`) || f === `${pageId}.current`) {
-      fs.unlinkSync(path.join(paths.imageClassificationDir, f));
-    }
-  }
+  // Reset version tracking
+  resetNodeVersions(label, "image-classification", pageId);
 
   return NextResponse.json({ version: 1, ...classification });
 }
@@ -151,8 +145,6 @@ export async function PUT(
       { status: 404 }
     );
   }
-
-  setCurrentImageClassificationVersion(label, pageId, version);
 
   const data = getImageClassificationVersion(label, pageId, version);
   return NextResponse.json({ versions, current: version, data });
@@ -225,15 +217,12 @@ export async function PATCH(
     await sharp(buf)
       .extract({ left: x, top: y, width, height })
       .toFile(path.join(classDir, `${newId}.png`));
+    const cropBuf = fs.readFileSync(path.join(classDir, `${newId}.png`));
+    putImage(label, newId, pageId, `image-classification/${newId}.png`, hashBuffer(cropBuf), width, height, "crop");
   }
 
-  // Write versioned JSON with canonical IDs
-  const newFile = path.join(
-    classDir,
-    `${pageId}.v${String(nextVersion).padStart(3, "0")}.json`
-  );
-  fs.writeFileSync(newFile, JSON.stringify(data, null, 2), "utf-8");
-  setCurrentImageClassificationVersion(label, pageId, nextVersion);
+  // Write versioned data to DB
+  putNodeData(label, "image-classification", pageId, nextVersion, data);
 
   return NextResponse.json({ version: nextVersion, ...data });
 }

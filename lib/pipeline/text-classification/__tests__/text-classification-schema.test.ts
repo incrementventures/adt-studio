@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pageTextClassificationSchema } from "../text-classification-schema";
+import { pageTextClassificationSchema, buildLlmTextClassificationSchema } from "../text-classification-schema";
 
 describe("pageTextClassificationSchema", () => {
   it("parses a fully populated object", () => {
@@ -57,7 +57,25 @@ describe("pageTextClassificationSchema", () => {
     expect(result.groups).toHaveLength(0);
   });
 
-  it("rejects invalid text_type", () => {
+  it("storage schema accepts any text_type string", () => {
+    const input = {
+      reasoning: "test",
+      groups: [
+        {
+          group_type: "paragraph",
+          texts: [{ text_type: "custom_type", text: "hello" }],
+        },
+      ],
+    };
+
+    expect(() => pageTextClassificationSchema.parse(input)).not.toThrow();
+  });
+
+  it("LLM schema rejects invalid text_type", () => {
+    const schema = buildLlmTextClassificationSchema(
+      ["section_text", "section_heading"],
+      ["paragraph", "heading"]
+    );
     const input = {
       reasoning: "test",
       groups: [
@@ -68,10 +86,14 @@ describe("pageTextClassificationSchema", () => {
       ],
     };
 
-    expect(() => pageTextClassificationSchema.parse(input)).toThrow();
+    expect(() => schema.parse(input)).toThrow();
   });
 
-  it("rejects invalid group_type", () => {
+  it("LLM schema rejects invalid group_type", () => {
+    const schema = buildLlmTextClassificationSchema(
+      ["section_text", "section_heading"],
+      ["paragraph", "heading"]
+    );
     const input = {
       reasoning: "test",
       groups: [
@@ -82,7 +104,7 @@ describe("pageTextClassificationSchema", () => {
       ],
     };
 
-    expect(() => pageTextClassificationSchema.parse(input)).toThrow();
+    expect(() => schema.parse(input)).toThrow();
   });
 
   it("rejects missing required fields", () => {

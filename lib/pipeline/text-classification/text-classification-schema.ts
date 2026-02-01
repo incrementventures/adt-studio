@@ -1,18 +1,14 @@
 import { z } from "zod/v4";
-import { textTypeKeys, groupTypeKeys } from "../../config";
 
-export const textTypeEnum = z.enum(textTypeKeys);
-
-export const groupTypeEnum = z.enum(groupTypeKeys);
-
+// Storage schemas — use z.string() so stored data can contain types from any book's config.
 export const textEntrySchema = z.object({
-  text_type: textTypeEnum,
+  text_type: z.string(),
   text: z.string(),
   is_pruned: z.boolean().default(false),
 });
 
 export const textGroupSchema = z.object({
-  group_type: groupTypeEnum,
+  group_type: z.string(),
   texts: z.array(textEntrySchema),
 });
 
@@ -21,21 +17,32 @@ export const pageTextClassificationSchema = z.object({
   groups: z.array(textGroupSchema),
 });
 
-/** Schema sent to the LLM — no is_pruned (applied post-generation). */
-const llmTextEntrySchema = z.object({
-  text_type: textTypeEnum,
-  text: z.string(),
-});
+/**
+ * Build an LLM-facing text-classification schema with enum-constrained
+ * text_type and group_type fields (same pattern as buildPageSectioningSchema).
+ */
+export function buildLlmTextClassificationSchema(
+  textTypes: [string, ...string[]],
+  groupTypes: [string, ...string[]]
+) {
+  const textTypeEnum = z.enum(textTypes);
+  const groupTypeEnum = z.enum(groupTypes);
 
-const llmTextGroupSchema = z.object({
-  group_type: groupTypeEnum,
-  texts: z.array(llmTextEntrySchema),
-});
+  const llmTextEntrySchema = z.object({
+    text_type: textTypeEnum,
+    text: z.string(),
+  });
 
-export const llmPageTextClassificationSchema = z.object({
-  reasoning: z.string(),
-  groups: z.array(llmTextGroupSchema),
-});
+  const llmTextGroupSchema = z.object({
+    group_type: groupTypeEnum,
+    texts: z.array(llmTextEntrySchema),
+  });
+
+  return z.object({
+    reasoning: z.string(),
+    groups: z.array(llmTextGroupSchema),
+  });
+}
 
 export type TextEntry = z.infer<typeof textEntrySchema>;
 // group_id is stamped after LLM generation, not part of the LLM schema

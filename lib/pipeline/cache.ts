@@ -4,6 +4,13 @@ import crypto from "node:crypto";
 import { generateObject } from "ai";
 import type { GenerateObjectResult, LanguageModel, ModelMessage } from "ai";
 import { renderPrompt } from "./prompt";
+import {
+  appendLogEntry,
+  resolveCacheDir,
+  sanitizeMessages,
+  type LlmLogEntry,
+  type LlmLogTokenUsage,
+} from "./llm-log";
 
 type GenerateObjectParams = Parameters<typeof generateObject>[0];
 
@@ -14,27 +21,45 @@ export interface ValidationResult {
 
 export async function cachedGenerateObject<T>(
   options: GenerateObjectParams,
-  cacheDir: string,
-  opts?: {
+  opts: {
     validate?: (result: T) => ValidationResult;
     maxRetries?: number;
+    log: {
+      label: string;
+      taskType: string;
+      pageId?: string;
+      promptName: string;
+    };
   },
 ): Promise<GenerateObjectResult<T>> {
-  const cacheRoot = path.join(cacheDir, ".cache");
+  const cacheRoot = path.join(resolveCacheDir(opts.log), ".cache");
   const maxRetries = opts?.maxRetries ?? 0;
 
   let currentOptions = options;
   let lastErrors: string[] = [];
 
+  const modelId =
+    typeof options.model === "string"
+      ? options.model
+      : options.model.modelId;
+
+  const t0 = Date.now();
+  let allErrors: string[] = [];
+  let lastCacheHit = false;
+  let finalAttempt = 0;
+  const totalUsage: LlmLogTokenUsage = { inputTokens: 0, outputTokens: 0 };
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const hash = computeHash(currentOptions);
     const cacheFile = path.join(cacheRoot, `${hash}.json`);
+    finalAttempt = attempt;
 
     try {
       let result: T;
 
       if (!process.env.RECACHE && fs.existsSync(cacheFile)) {
         result = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+        lastCacheHit = true;
       } else {
         const generated = await generateObject(currentOptions);
         fs.mkdirSync(cacheRoot, { recursive: true });
@@ -43,12 +68,21 @@ export async function cachedGenerateObject<T>(
           JSON.stringify(generated.object, null, 2) + "\n",
         );
         result = generated.object as T;
+        lastCacheHit = false;
+
+        const u = generated.usage;
+        totalUsage.inputTokens += u.inputTokens ?? 0;
+        totalUsage.outputTokens += u.outputTokens ?? 0;
+        totalUsage.cacheReadTokens = (totalUsage.cacheReadTokens ?? 0) + (u.inputTokenDetails?.cacheReadTokens ?? 0);
+        totalUsage.cacheWriteTokens = (totalUsage.cacheWriteTokens ?? 0) + (u.inputTokenDetails?.cacheWriteTokens ?? 0);
       }
 
-      if (opts?.validate) {
+      if (opts.validate) {
         const check = opts.validate(result);
         if (!check.valid) {
           lastErrors = check.errors;
+          allErrors.push(...check.errors);
+
           bustCache(cacheFile);
           currentOptions = appendValidationFeedback(
             currentOptions,
@@ -59,17 +93,81 @@ export async function cachedGenerateObject<T>(
         }
       }
 
+      const withResponse = appendAssistantResponse(currentOptions, result);
+      const durationMs = Date.now() - t0;
+      const usage = totalUsage.inputTokens > 0 || totalUsage.outputTokens > 0 ? totalUsage : undefined;
+      writeLog(opts.log, modelId, lastCacheHit, attempt, durationMs, withResponse, usage, allErrors.length > 0 ? allErrors : undefined);
+
       return { object: result } as GenerateObjectResult<T>;
     } catch (err) {
-      lastErrors = [err instanceof Error ? err.message : String(err)];
+      const errMsg = err instanceof Error ? err.message : String(err);
+      lastErrors = [errMsg];
+      allErrors.push(errMsg);
       bustCache(cacheFile);
-      if (attempt === maxRetries) throw err;
+      if (attempt === maxRetries) {
+        const durationMs = Date.now() - t0;
+        const usage = totalUsage.inputTokens > 0 || totalUsage.outputTokens > 0 ? totalUsage : undefined;
+        writeLog(opts.log, modelId, false, finalAttempt, durationMs, currentOptions, usage, allErrors);
+        throw err;
+      }
     }
   }
 
+  const durationMs = Date.now() - t0;
+  const usage = totalUsage.inputTokens > 0 || totalUsage.outputTokens > 0 ? totalUsage : undefined;
+  writeLog(opts.log, modelId, false, finalAttempt, durationMs, currentOptions, usage, allErrors);
   throw new Error(
     `Validation failed after ${maxRetries + 1} attempts. Errors:\n${lastErrors.join("\n")}`,
   );
+}
+
+function writeLog(
+  log: { label: string; taskType: string; pageId?: string; promptName: string },
+  modelId: string,
+  cacheHit: boolean,
+  attempt: number,
+  durationMs: number,
+  options: GenerateObjectParams,
+  usage?: LlmLogTokenUsage,
+  validationErrors?: string[],
+): void {
+  try {
+    const entry: LlmLogEntry = {
+      timestamp: new Date().toISOString(),
+      label: log.label,
+      taskType: log.taskType,
+      pageId: log.pageId,
+      promptName: log.promptName,
+      modelId,
+      cacheHit,
+      attempt,
+      durationMs,
+      usage,
+      validationErrors,
+      system: typeof options.system === "string" ? options.system : undefined,
+      messages: sanitizeMessages((options.messages ?? []) as ModelMessage[]),
+    };
+    appendLogEntry(entry);
+  } catch {
+    // Logging must never break the pipeline
+  }
+}
+
+function appendAssistantResponse<T>(
+  options: GenerateObjectParams,
+  result: T,
+): GenerateObjectParams {
+  const currentMessages = (options.messages ?? []) as ModelMessage[];
+  return {
+    ...options,
+    messages: [
+      ...currentMessages,
+      {
+        role: "assistant" as const,
+        content: JSON.stringify(result, null, 2),
+      },
+    ] as ModelMessage[],
+  } as GenerateObjectParams;
 }
 
 function appendValidationFeedback<T>(
@@ -106,11 +204,13 @@ function bustCache(cacheFile: string): void {
 }
 
 export async function cachedPromptGenerateObject<T>(options: {
+  label: string;
+  taskType: string;
+  pageId?: string;
   model: LanguageModel;
   schema: unknown;
   promptName: string;
   promptContext: Record<string, unknown>;
-  cacheDir: string;
   validate?: (result: T) => ValidationResult;
   maxRetries?: number;
 }): Promise<T> {
@@ -131,8 +231,16 @@ export async function cachedPromptGenerateObject<T>(options: {
           : undefined,
       messages: nonSystemMessages as ModelMessage[],
     } as GenerateObjectParams,
-    options.cacheDir,
-    { validate: options.validate, maxRetries: options.maxRetries },
+    {
+      validate: options.validate,
+      maxRetries: options.maxRetries,
+      log: {
+        label: options.label,
+        taskType: options.taskType,
+        pageId: options.pageId,
+        promptName: options.promptName,
+      },
+    },
   );
 
   return object;
