@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getBooksRoot } from "@/lib/books";
 import { extract } from "@/lib/pipeline/extract/extract";
+import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -82,7 +83,8 @@ export async function POST(request: Request) {
           )
         );
       }
-      write({ done: true, label });
+      const jobId = queue.enqueue("metadata", label);
+      write({ done: true, label, jobId });
       writer.close();
     },
   });

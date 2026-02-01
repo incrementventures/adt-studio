@@ -54,68 +54,75 @@ export default function MetadataPanel({
         return;
       }
 
-      const contentType = res.headers.get("content-type") ?? "";
-
-      // Non-streaming response (already_complete)
-      if (contentType.includes("application/json")) {
-        const data = await res.json();
-        if (data.metadata) setMetadata(data.metadata);
-        setStatus("done");
-        return;
-      }
-
-      // NDJSON streaming response
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setError("No response body");
+      const { jobId } = await res.json();
+      if (!jobId) {
+        setError("No job ID returned");
         setStatus("error");
         return;
       }
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let errored = false;
+      // Track job via SSE
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if (msg.error) {
-              setError(msg.error);
-              setStatus("error");
-              errored = true;
-              return;
-            }
-            if (msg.done && msg.metadata) {
-              setMetadata(msg.metadata);
-              setStatus("done");
-            }
-          } catch {
-            // skip malformed lines
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            if (job.result) setMetadata(job.result as BookMetadata);
+            setStatus("done");
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Extraction failed");
+            setStatus("error");
+            es.close();
           }
+        } catch {
+          // skip malformed events
         }
-      }
+      });
 
-      if (!errored) setStatus("done");
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setStatus("error");
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setStatus("error");
     }
   }, [label]);
 
-  // Auto-trigger extraction when metadata is a stub
+  // When navigating to a book whose metadata job is already running (e.g. right
+  // after upload), pick up the in-flight job via the queue SSE stream.
   useEffect(() => {
-    if (initialMetadata.reasoning === STUB_REASONING) {
-      runExtraction();
-    }
+    if (!isStub) return;
+
+    const es = new EventSource("/api/queue");
+    setStatus("extracting");
+
+    es.addEventListener("job", (e) => {
+      try {
+        const job = JSON.parse(e.data);
+        if (job.type !== "metadata" || job.label !== label) return;
+        if (job.status === "completed") {
+          if (job.result) setMetadata(job.result as BookMetadata);
+          setStatus("done");
+          es.close();
+        } else if (job.status === "failed") {
+          setError(job.error ?? "Extraction failed");
+          setStatus("error");
+          es.close();
+        }
+      } catch {
+        // skip malformed
+      }
+    });
+
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => es.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
