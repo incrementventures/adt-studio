@@ -38,7 +38,6 @@ export function ImageClassificationPanel({
   const [imageHashes, setImageHashes] = useState<Record<string, string>>(initialImageHashes);
   const currentVersionRef = useRef(initialVersion);
   const [isDirty, setIsDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cropImageId, setCropImageId] = useState<string | null>(null);
@@ -48,19 +47,15 @@ export function ImageClassificationPanel({
 
   const versionApi: VersionApi = useMemo(() => ({
     loadVersion: async (v: number) => {
-      const res = await fetch(apiBase, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: v }),
-      });
+      const res = await fetch(`${apiBase}?version=${v}`);
       if (!res.ok) throw new Error("Failed to load version");
       return res.json();
     },
     saveVersion: async (v: number) => {
       const res = await fetch(apiBase, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data, baseVersion: v }),
+        body: JSON.stringify({ data }),
       });
       if (!res.ok) throw new Error("Failed to save");
       return res.json();
@@ -84,8 +79,10 @@ export function ImageClassificationPanel({
         try {
           const job = JSON.parse(e.data);
           if (job.status === "completed") {
-            const { version: newVersion, versions: newVersions, imageHashes: newHashes, ...rest } = job.result;
-            setData(rest as PageImageClassification);
+            const { version: newVersion, versions: newVersions, imageHashes: newHashes, data: newData } = job.result as {
+              version: number; versions: number[]; imageHashes?: Record<string, string>; data: PageImageClassification;
+            };
+            setData(newData);
             currentVersionRef.current = newVersion;
             setVersions(newVersions ?? [newVersion]);
             if (newHashes) setImageHashes(newHashes);
@@ -137,18 +134,9 @@ export function ImageClassificationPanel({
         JSON.stringify(prev ?? { images: [] })
       );
 
-      // Find max _imNNN number across disk imageIds and current entries
-      const imRe = /_im(\d{3})$/;
-      let maxNum = 0;
-      for (const id of imageIds) {
-        const m = imRe.exec(id);
-        if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
-      }
-      for (const entry of next.images) {
-        const m = imRe.exec(entry.image_id);
-        if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
-      }
-      cropId = `${pageId}_im${String(maxNum + 1).padStart(3, "0")}`;
+      // Use a temp ID — the server assigns the real _imNNN from the global max.
+      // This avoids collisions with images created in other versions.
+      cropId = `${pageId}_crop_${Date.now()}`;
 
       const newEntry: ImageEntry = {
         image_id: cropId,
@@ -189,34 +177,6 @@ export function ImageClassificationPanel({
     setIsDirty(false);
   }
 
-  async function saveChanges() {
-    setSaving(true);
-    try {
-      const res = await fetch(apiBase, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data, baseVersion: currentVersionRef.current }),
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-      const { version: newVersion, imageHashes: newHashes, ...rest } = json;
-      setData(rest as PageImageClassification);
-      currentVersionRef.current = newVersion;
-      if (newHashes) setImageHashes(newHashes);
-      setIsDirty(false);
-      setPendingCrops(new Set());
-      setVersions((prev) =>
-        prev.includes(newVersion)
-          ? prev
-          : [...prev, newVersion].sort((a, b) => a - b)
-      );
-    } catch {
-      // ignore
-    } finally {
-      setSaving(false);
-    }
-  }
-
   const classificationMap = new Map(
     (data?.images ?? []).map((img) => [img.image_id, img])
   );
@@ -241,18 +201,21 @@ export function ImageClassificationPanel({
           currentVersionRef.current = v;
           if (resp.imageHashes) setImageHashes(resp.imageHashes);
         }}
-        onVersionSaved={(newVersion, newVersions) => {
+        onVersionSaved={(newVersion, newVersions, raw) => {
+          const resp = raw as { data: PageImageClassification; imageHashes?: Record<string, string> };
+          setData(resp.data);
           currentVersionRef.current = newVersion;
           setVersions(newVersions);
+          if (resp.imageHashes) setImageHashes(resp.imageHashes);
+          setIsDirty(false);
+          setPendingCrops(new Set());
         }}
         rerunLoading={running}
         rerunDisabled={isDirty}
         onRerun={handleRerun}
         rerunTitle={data ? "Rerun image classification" : "Run image classification"}
         isDirty={isDirty}
-        onDirtySave={saveChanges}
         onDirtyDiscard={discardEdits}
-        dirtySaving={saving}
         error={error}
       />
       <div className="p-4">

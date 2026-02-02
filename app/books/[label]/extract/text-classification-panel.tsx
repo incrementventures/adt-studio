@@ -30,7 +30,6 @@ export function TextClassificationPanel({
   const [data, setData] = useState(initialData);
   const [versions, setVersions] = useState(initialAvailableVersions);
   const [isDirty, setIsDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [rerunning, setRerunning] = useState(false);
   const pipelineBusy = usePipelineBusy(pageId, "text-classification");
   const [rerunError, setRerunError] = useState<string | null>(null);
@@ -40,19 +39,15 @@ export function TextClassificationPanel({
 
   const versionApi: VersionApi = useMemo(() => ({
     loadVersion: async (v: number) => {
-      const res = await fetch(apiBase, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: v }),
-      });
+      const res = await fetch(`${apiBase}?version=${v}`);
       if (!res.ok) throw new Error("Failed to load version");
       return res.json();
     },
     saveVersion: async (v: number) => {
       const res = await fetch(apiBase, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data, baseVersion: v }),
+        body: JSON.stringify({ data }),
       });
       if (!res.ok) throw new Error("Failed to save");
       return res.json();
@@ -76,8 +71,10 @@ export function TextClassificationPanel({
         try {
           const job = JSON.parse(e.data);
           if (job.status === "completed") {
-            const { version: newVersion, versions: newVersions, ...rest } = job.result as { version: number; versions: number[] } & PageTextClassification;
-            setData(rest as PageTextClassification);
+            const { version: newVersion, versions: newVersions, data: newData } = job.result as {
+              version: number; versions: number[]; data: PageTextClassification;
+            };
+            setData(newData);
             currentVersionRef.current = newVersion;
             setVersions(newVersions ?? [newVersion]);
             setIsDirty(false);
@@ -123,32 +120,6 @@ export function TextClassificationPanel({
     setIsDirty(false);
   }
 
-  async function saveChanges() {
-    setSaving(true);
-    try {
-      const res = await fetch(apiBase, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data, baseVersion: currentVersionRef.current }),
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-      const { version: newVersion, ...rest } = json;
-      setData(rest as PageTextClassification);
-      currentVersionRef.current = newVersion;
-      setIsDirty(false);
-      setVersions((prev) =>
-        prev.includes(newVersion)
-          ? prev
-          : [...prev, newVersion].sort((a, b) => a - b)
-      );
-    } catch {
-      // ignore
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div>
       <NodeHeader
@@ -162,18 +133,19 @@ export function TextClassificationPanel({
           setData(resp.data);
           currentVersionRef.current = v;
         }}
-        onVersionSaved={(newVersion, newVersions) => {
+        onVersionSaved={(newVersion, newVersions, raw) => {
+          const resp = raw as { data: PageTextClassification };
+          setData(resp.data);
           currentVersionRef.current = newVersion;
           setVersions(newVersions);
+          setIsDirty(false);
         }}
         rerunLoading={rerunning || pipelineBusy}
         rerunDisabled={isDirty}
         onRerun={handleRerun}
         rerunTitle={data ? "Rerun classification" : "Run classification"}
         isDirty={isDirty}
-        onDirtySave={saveChanges}
         onDirtyDiscard={discardEdits}
-        dirtySaving={saving}
         error={rerunError}
       />
       {!data ? (

@@ -4,7 +4,7 @@ import { resolveExtractedImagePath } from "@/lib/books";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
-const IMAGE_RE = /^pg\d{3}_im\d{3}$/;
+const IMAGE_RE = /^pg\d{3}_(im\d{3}|page)$/;
 
 export async function GET(
   _request: Request,

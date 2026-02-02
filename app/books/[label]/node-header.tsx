@@ -13,13 +13,13 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 // ---------------------------------------------------------------------------
 
 export interface VersionApi {
-  /** Fetch a specific version's data. Returns the parsed JSON response. */
+  /** Fetch a specific version's data via GET. Returns the parsed JSON response. */
   loadVersion: (version: number) => Promise<unknown>;
-  /** Save an old version as the new latest. Returns `{ version, versions, ...rest }`. */
+  /** Create a new version via PUT. Returns `{ version, versions, data, ... }`. */
   saveVersion: (version: number) => Promise<{ version: number; versions: number[] }>;
 }
 
-export type NodeHeaderColor = "slate" | "amber" | "blue" | "emerald" | "purple" | "rose" | "indigo";
+export type NodeHeaderColor = "slate" | "amber" | "blue" | "emerald" | "purple" | "rose" | "indigo" | "teal";
 
 const colorMap: Record<NodeHeaderColor, {
   bg: string;
@@ -93,6 +93,15 @@ const colorMap: Record<NodeHeaderColor, {
     dropdownItemHover: "hover:bg-indigo-400",
     saveText: "text-indigo-700",
   },
+  teal: {
+    bg: "bg-teal-600",
+    btnBg: "bg-teal-500",
+    btnHover: "hover:bg-teal-400",
+    rerunHover: "hover:bg-teal-500",
+    dropdownBg: "bg-teal-500",
+    dropdownItemHover: "hover:bg-teal-400",
+    saveText: "text-teal-700",
+  },
 };
 
 export interface NodeHeaderProps {
@@ -120,12 +129,8 @@ export interface NodeHeaderProps {
   rerunTitle?: string;
   /** Whether the consumer has unsaved local edits (e.g. pruning, cropping). Takes precedence over version-browse save/discard. */
   isDirty?: boolean;
-  /** Called when the user clicks Save while isDirty. */
-  onDirtySave?: () => void;
   /** Called when the user clicks Discard while isDirty. */
   onDirtyDiscard?: () => void;
-  /** Whether a dirty-save is in progress (shows spinner). */
-  dirtySaving?: boolean;
   /** Error message to display in the header. */
   error?: string | null;
   /** Optional extra content that replaces the entire right side (e.g. edit-mode buttons). */
@@ -145,9 +150,7 @@ export function NodeHeader({
   rerunDisabled,
   rerunTitle = "Rerun",
   isDirty,
-  onDirtySave,
   onDirtyDiscard,
-  dirtySaving,
   error,
   children,
 }: NodeHeaderProps) {
@@ -240,9 +243,8 @@ export function NodeHeader({
   }
 
   const showSaveDiscard = isDirty || isOldVersion;
-  const saveDisabled = isDirty ? dirtySaving : savingVersion;
-  const isSaving = isDirty ? dirtySaving : savingVersion;
-  const handleSaveClick = isDirty ? onDirtySave : handleSave;
+  const isSaving = savingVersion;
+  const handleSaveClick = handleSave;
   const handleDiscardClick = isDirty ? onDirtyDiscard : handleDiscard;
 
   return (
@@ -260,7 +262,7 @@ export function NodeHeader({
               <button
                 type="button"
                 onClick={handleDiscardClick}
-                disabled={saveDisabled}
+                disabled={isSaving}
                 className={`inline-flex items-center cursor-pointer rounded px-2 h-6 text-xs font-medium text-white disabled:opacity-50 transition-colors ${c.btnBg} ${c.btnHover}`}
               >
                 Discard
@@ -268,7 +270,7 @@ export function NodeHeader({
               <button
                 type="button"
                 onClick={handleSaveClick}
-                disabled={saveDisabled}
+                disabled={isSaving}
                 className={`inline-flex cursor-pointer items-center rounded bg-white px-2 h-6 text-xs font-semibold hover:bg-slate-50 disabled:opacity-70 transition-colors ${c.saveText}`}
               >
                 Save

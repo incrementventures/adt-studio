@@ -19,6 +19,7 @@ export async function sectionPage(options: {
   groups: { group_id: string; group_type: string; text: string }[];
   sectionTypes: { key: string; description: string }[];
   promptName: string;
+  skipCache?: boolean;
 }): Promise<PageSectioning> {
   const sectionTypeKeys = options.sectionTypes.map((s) => s.key) as [
     string,
@@ -54,5 +55,6 @@ export async function sectionPage(options: {
       groups: options.groups,
       section_types: options.sectionTypes,
     },
+    skipCache: options.skipCache,
   });
 }

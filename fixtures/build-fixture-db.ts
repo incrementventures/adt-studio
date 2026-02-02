@@ -30,7 +30,7 @@ const db = getDb("raven");
 const imagesDir = path.join(ravenDir, "images");
 const imageFiles = fs.readdirSync(imagesDir).sort();
 
-// Discover page IDs from page images
+// Discover page IDs from im000 page images
 const pageIds = imageFiles
   .filter((f) => /^pg\d{3}_page\.png$/.test(f))
   .map((f) => f.replace("_page.png", ""))
@@ -41,28 +41,13 @@ for (const pageId of pageIds) {
   // Text files no longer on disk; insert empty text (tests use DB)
   putPageText("raven", pageId, pageNumber, "");
 
-  // Page image
-  const pageImagePath = path.join(imagesDir, `${pageId}_page.png`);
-  if (fs.existsSync(pageImagePath)) {
-    const buf = fs.readFileSync(pageImagePath);
-    putImage(
-      "raven",
-      `${pageId}_page`,
-      pageId,
-      `images/${pageId}_page.png`,
-      hashBuffer(buf),
-      buf.readUInt32BE(16),
-      buf.readUInt32BE(20),
-      "page"
-    );
-  }
-
-  // Extracted images
+  // All images: im000 is the page image (source "page"), im001+ are extracted (source "extract")
   const re = new RegExp(`^${pageId}_im\\d{3}\\.png$`);
-  const extractedImages = imageFiles.filter((f) => re.test(f)).sort();
-  for (const imgFile of extractedImages) {
+  const allImages = imageFiles.filter((f) => re.test(f)).sort();
+  for (const imgFile of allImages) {
     const imageId = imgFile.replace(/\.png$/, "");
     const buf = fs.readFileSync(path.join(imagesDir, imgFile));
+    const source = "extract";
     putImage(
       "raven",
       imageId,
@@ -71,7 +56,7 @@ for (const pageId of pageIds) {
       hashBuffer(buf),
       buf.readUInt32BE(16),
       buf.readUInt32BE(20),
-      "extract"
+      source
     );
   }
 }

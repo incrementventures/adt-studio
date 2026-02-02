@@ -93,16 +93,12 @@ export const imageClassificationNode: Node<PageImageClassification[]> =
                 sizeFilter
               );
 
-              // Prepend the full page image as a pruned entry (available for cropping)
-              if (fs.existsSync(p.imagePath)) {
-                const pageBuf = fs.readFileSync(p.imagePath);
-                classification.images.unshift({
-                  image_id: `${p.pageId}_im000`,
-                  path: `images/${p.pageId}_page.png`,
-                  width: pageBuf.readUInt32BE(16),
-                  height: pageBuf.readUInt32BE(20),
-                  is_pruned: true,
-                });
+              // im000 is the full page render — always pruned (kept for cropping only)
+              for (const img of classification.images) {
+                if (img.image_id === `${p.pageId}_page`) {
+                  img.is_pruned = true;
+                  break;
+                }
               }
 
               fs.writeFileSync(

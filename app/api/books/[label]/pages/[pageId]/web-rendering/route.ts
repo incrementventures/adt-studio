@@ -29,13 +29,14 @@ export async function POST(
     );
   }
 
-  const sectioning = getPageSectioning(label, pageId);
-  if (!sectioning) {
+  const sectioningResult = getPageSectioning(label, pageId);
+  if (!sectioningResult) {
     return NextResponse.json(
       { error: "No page sectioning found — run sectioning first" },
       { status: 404 }
     );
   }
+  const sectioning = sectioningResult.data;
 
   if (!getTextClassification(label, pageId)) {
     return NextResponse.json(

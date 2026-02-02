@@ -4,7 +4,7 @@ import mupdf, { type Document as MupdfDocument } from "mupdf";
 import { Observable } from "rxjs";
 import { slugFromPath } from "../slug";
 import { defineNode, type PipelineContext, type Node } from "../node";
-import { putPageText, putPdfMetadata, putImage } from "@/lib/books";
+import { putPageText, putPdfMetadata, putImage, hasImage } from "@/lib/books";
 import { hashBuffer } from "@/lib/pipeline/llm-log";
 import { getDb } from "@/lib/db";
 
@@ -100,19 +100,22 @@ function extractPage(doc: MupdfDocument, i: number, label: string, imagesDir: st
   // Render full-page image at 2x scale (~144 DPI)
   const matrix = mupdf.Matrix.scale(2, 2);
   const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false);
-  const imagePath = path.join(imagesDir, `${pageId}_page.png`);
+  const pageImgId = `${pageId}_page`;
+  const imagePath = path.join(imagesDir, `${pageImgId}.png`);
   const pagePngBuf = Buffer.from(pixmap.asPNG());
   fs.writeFileSync(imagePath, pagePngBuf);
-  putImage(
-    label,
-    `${pageId}_page`,
-    pageId,
-    `images/${pageId}_page.png`,
-    hashBuffer(pagePngBuf),
-    pagePngBuf.readUInt32BE(16),
-    pagePngBuf.readUInt32BE(20),
-    "page"
-  );
+  if (!hasImage(label, pageImgId)) {
+    putImage(
+      label,
+      pageImgId,
+      pageId,
+      `images/${pageImgId}.png`,
+      hashBuffer(pagePngBuf),
+      pagePngBuf.readUInt32BE(16),
+      pagePngBuf.readUInt32BE(20),
+      "extract"
+    );
+  }
 
   // Extract text
   const stext = page.toStructuredText();
@@ -144,16 +147,18 @@ function extractPage(doc: MupdfDocument, i: number, label: string, imagesDir: st
             const imgFileName = imgId + ".png";
             const imgBuf = Buffer.from(imgPixmap.asPNG());
             fs.writeFileSync(path.join(imagesDir, imgFileName), imgBuf);
-            putImage(
-              label,
-              imgId,
-              pageId,
-              `images/${imgFileName}`,
-              hashBuffer(imgBuf),
-              imgBuf.readUInt32BE(16),
-              imgBuf.readUInt32BE(20),
-              "extract"
-            );
+            if (!hasImage(label, imgId)) {
+              putImage(
+                label,
+                imgId,
+                pageId,
+                `images/${imgFileName}`,
+                hashBuffer(imgBuf),
+                imgBuf.readUInt32BE(16),
+                imgBuf.readUInt32BE(20),
+                "extract"
+              );
+            }
           } catch {
             // Skip images that fail to decode
           }

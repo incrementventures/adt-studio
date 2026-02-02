@@ -23,11 +23,11 @@ import {
   listWebRenderingVersions,
   listImageClassificationVersions,
   listTextClassificationVersions,
+  listPageSectioningVersions,
   getImageHashes,
   putNodeData,
-  putImage,
 } from "@/lib/books";
-import { hashBuffer } from "@/lib/pipeline/llm-log";
+
 import {
   loadBookConfig,
   getImageFilters,
@@ -129,8 +129,9 @@ export async function runWebRendering(
   const pageImagePath = resolvePageImagePath(label, pageId);
   const pageImageBase64 = fs.readFileSync(pageImagePath).toString("base64");
 
-  const sectioning = getPageSectioning(label, pageId);
-  if (!sectioning) throw new Error("No page sectioning found");
+  const sectioningResult = getPageSectioning(label, pageId);
+  if (!sectioningResult) throw new Error("No page sectioning found");
+  const sectioning = sectioningResult.data;
 
   const { textLookup, imageMap } = buildTextLookup(label, pageId);
 
@@ -218,10 +219,10 @@ export async function runWebRenderingSection(
   const pageImagePath = resolvePageImagePath(label, pageId);
   const pageImageBase64 = fs.readFileSync(pageImagePath).toString("base64");
 
-  const sectioning = getPageSectioning(label, pageId);
-  if (!sectioning) throw new Error("No page sectioning found");
+  const sectioningResult = getPageSectioning(label, pageId);
+  if (!sectioningResult) throw new Error("No page sectioning found");
 
-  const section = sectioning.sections[sectionIndex];
+  const section = sectioningResult.data.sections[sectionIndex];
   if (!section) throw new Error(`Section ${sectionIndex} not found`);
   if (section.is_pruned) throw new Error(`Section ${sectionIndex} is pruned`);
 
@@ -242,7 +243,7 @@ export async function runWebRenderingSection(
 
   const promptName = config.web_rendering?.prompt ?? "web_generation_html";
 
-  onProgress?.(`Rendering section ${sectionIndex + 1}/${sectioning.sections.length}`);
+  onProgress?.(`Rendering section ${sectionIndex + 1}/${sectioningResult.data.sections.length}`);
 
   const rendering = await renderSection({
     label,
@@ -307,11 +308,11 @@ export async function runWebEdit(
   // Derive allowed text/image IDs for validation
   let allowedTextIds: string[] | undefined;
   let allowedImageIds: string[] | undefined;
-  const sectioning = getPageSectioning(label, pageId);
+  const sectioningResult = getPageSectioning(label, pageId);
   try {
     const { textLookup } = buildTextLookup(label, pageId);
-    if (sectioning) {
-      const section = sectioning.sections[sectionIndex];
+    if (sectioningResult) {
+      const section = sectioningResult.data.sections[sectionIndex];
       if (section) {
         const allImgs = loadUnprunedImages(label, pageId);
         const imageIdSet = new Set(allImgs.map((img) => img.image_id));
@@ -425,7 +426,7 @@ export async function runTextClassification(
   const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
   putNodeData(label, "text-classification", pageId, nextVersion, classification);
 
-  return { version: nextVersion, versions: listTextClassificationVersions(label, pageId), ...classification };
+  return { version: nextVersion, versions: listTextClassificationVersions(label, pageId), data: classification };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,7 +435,8 @@ export async function runTextClassification(
 
 export async function runPageSectioning(
   label: string,
-  pageId: string
+  pageId: string,
+  options?: { skipCache?: boolean }
 ) {
   const { config, ctx } = resolveCtx(label);
 
@@ -471,6 +473,7 @@ export async function runPageSectioning(
     groups,
     sectionTypes: sectionTypeList,
     promptName,
+    skipCache: options?.skipCache,
   });
 
   // Mark pruned sections
@@ -485,9 +488,11 @@ export async function runPageSectioning(
   sectioning.text_classification_version = extractionResult.version;
   sectioning.image_classification_version = imageClassResult?.version;
 
-  putNodeData(label, "page-sectioning", pageId, 1, sectioning);
+  const existingVersions = listPageSectioningVersions(label, pageId);
+  const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+  putNodeData(label, "page-sectioning", pageId, nextVersion, sectioning);
 
-  return sectioning;
+  return { version: nextVersion, versions: listPageSectioningVersions(label, pageId), data: sectioning };
 }
 
 // ---------------------------------------------------------------------------
@@ -514,20 +519,12 @@ export function runImageClassification(label: string, pageId: string) {
 
   const classification = classifyPageImages(imageInputs, sizeFilter);
 
-  // Prepend full page image as a pruned entry (available for cropping)
-  const pageImagePath = path.join(paths.imagesDir, `${pageId}_page.png`);
-  if (fs.existsSync(pageImagePath)) {
-    const pageBuf = fs.readFileSync(pageImagePath);
-    const im000Id = `${pageId}_im000`;
-    const im000Path = `images/${pageId}_page.png`;
-    putImage(label, im000Id, pageId, im000Path, hashBuffer(pageBuf), pageBuf.readUInt32BE(16), pageBuf.readUInt32BE(20), "page");
-    classification.images.unshift({
-      image_id: im000Id,
-      path: im000Path,
-      width: pageBuf.readUInt32BE(16),
-      height: pageBuf.readUInt32BE(20),
-      is_pruned: true,
-    });
+  // im000 is the full page render — always pruned (kept for cropping only)
+  for (const img of classification.images) {
+    if (img.image_id === `${pageId}_page`) {
+      img.is_pruned = true;
+      break;
+    }
   }
 
   const existingVersions = listImageClassificationVersions(label, pageId);
@@ -535,7 +532,7 @@ export function runImageClassification(label: string, pageId: string) {
   putNodeData(label, "image-classification", pageId, nextVersion, classification);
 
   const imageHashes = getImageHashes(label, pageId);
-  return { version: nextVersion, versions: listImageClassificationVersions(label, pageId), imageHashes, ...classification };
+  return { version: nextVersion, versions: listImageClassificationVersions(label, pageId), imageHashes, data: classification };
 }
 
 // ---------------------------------------------------------------------------

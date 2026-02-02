@@ -7,6 +7,7 @@ import {
   getPage,
   getMaxImageNum,
   getImageHashes,
+  hasImage,
   listImageClassificationVersions,
   getImageClassificationVersion,
   getLatestImageClassificationPath,
@@ -22,7 +23,7 @@ const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ label: string; pageId: string }> }
 ) {
   const { label, pageId } = await params;
@@ -39,8 +40,18 @@ export async function GET(
     );
   }
 
-  const current = versions[versions.length - 1];
-  const data = getImageClassificationVersion(label, pageId, current);
+  const url = new URL(request.url);
+  const vParam = url.searchParams.get("version");
+  const version = vParam ? Number(vParam) : versions[versions.length - 1];
+
+  if (!versions.includes(version)) {
+    return NextResponse.json(
+      { error: "Version not found" },
+      { status: 404 }
+    );
+  }
+
+  const data = getImageClassificationVersion(label, pageId, version);
   if (!data) {
     return NextResponse.json(
       { error: "Version not found" },
@@ -49,7 +60,7 @@ export async function GET(
   }
 
   const imageHashes = getImageHashes(label, pageId);
-  return NextResponse.json({ versions, current, data, imageHashes });
+  return NextResponse.json({ versions, version, data, imageHashes });
 }
 
 export async function POST(
@@ -71,39 +82,6 @@ export async function POST(
 }
 
 export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ label: string; pageId: string }> }
-) {
-  const { label, pageId } = await params;
-
-  if (!LABEL_RE.test(label) || !PAGE_RE.test(pageId)) {
-    return NextResponse.json({ error: "Invalid params" }, { status: 400 });
-  }
-
-  const body = await request.json();
-  const { version } = body;
-
-  if (typeof version !== "number") {
-    return NextResponse.json(
-      { error: "Missing or invalid version" },
-      { status: 400 }
-    );
-  }
-
-  const versions = listImageClassificationVersions(label, pageId);
-  if (!versions.includes(version)) {
-    return NextResponse.json(
-      { error: "Version not found" },
-      { status: 404 }
-    );
-  }
-
-  const data = getImageClassificationVersion(label, pageId, version);
-  const imageHashes = getImageHashes(label, pageId);
-  return NextResponse.json({ versions, current: version, data, imageHashes });
-}
-
-export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ label: string; pageId: string }> }
 ) {
@@ -138,11 +116,12 @@ export async function PATCH(
 
   let maxNum = getMaxImageNum(label, pageId);
 
-  // Assign final IDs and generate crop files for entries with source_region
+  // Assign final IDs and generate crop files for entries with source_region.
+  // Images already registered in the DB are stable — skip them.
+  // New crops (not yet in DB) get a fresh _imNNN ID from the global max.
   for (const img of data.images) {
     if (!img.source_region || !img.source_image_id) continue;
-    const croppedPath = path.join(imagesDir, `${img.image_id}.png`);
-    if (fs.existsSync(croppedPath)) continue;
+    if (hasImage(label, img.image_id)) continue;
 
     // Assign next available _imNNN ID
     maxNum++;
@@ -169,5 +148,5 @@ export async function PATCH(
 
   const imageHashes = getImageHashes(label, pageId);
   const versions = listImageClassificationVersions(label, pageId);
-  return NextResponse.json({ version: nextVersion, versions, imageHashes, ...data });
+  return NextResponse.json({ version: nextVersion, versions, imageHashes, data });
 }

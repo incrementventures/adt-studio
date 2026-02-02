@@ -9,7 +9,7 @@ const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
 const SECTION_ID_RE = /^pg\d{3}_s\d{3}$/;
 
-export async function PUT(
+export async function GET(
   request: Request,
   { params }: { params: Promise<{ label: string; pageId: string }> }
 ) {
@@ -19,17 +19,19 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid params" }, { status: 400 });
   }
 
-  const body = await request.json();
-  const { sectionId, version } = body;
+  const url = new URL(request.url);
+  const sectionId = url.searchParams.get("sectionId");
+  const vParam = url.searchParams.get("version");
 
-  if (typeof sectionId !== "string" || !SECTION_ID_RE.test(sectionId)) {
+  if (!sectionId || !SECTION_ID_RE.test(sectionId)) {
     return NextResponse.json(
       { error: "Missing or invalid sectionId" },
       { status: 400 }
     );
   }
 
-  if (typeof version !== "number") {
+  const version = vParam ? Number(vParam) : null;
+  if (version === null || isNaN(version)) {
     return NextResponse.json(
       { error: "Missing or invalid version" },
       { status: 400 }
@@ -48,7 +50,7 @@ export async function PUT(
   return NextResponse.json({ section, version });
 }
 
-export async function PATCH(
+export async function PUT(
   request: Request,
   { params }: { params: Promise<{ label: string; pageId: string }> }
 ) {

@@ -7,6 +7,7 @@ import {
   getImageClassification,
   listImageClassificationVersions,
   getImageHashes,
+  listPageSectioningVersions,
   getWebRendering,
 } from "@/lib/books";
 import { loadBookConfig, getSectionTypes } from "@/lib/config";
@@ -35,7 +36,8 @@ export default async function StoryboardPage({
         {pages.map((page, i) => {
           const extraction = getTextClassification(label, page.pageId);
           const availableVersions = listTextClassificationVersions(label, page.pageId);
-          const sectioning = getPageSectioning(label, page.pageId);
+          const sectioningResult = getPageSectioning(label, page.pageId);
+          const sectioningVersions = listPageSectioningVersions(label, page.pageId);
           const webRenderingResult = getWebRendering(label, page.pageId);
           const imageClassificationResult = getImageClassification(label, page.pageId);
           const imageClassificationVersions = listImageClassificationVersions(label, page.pageId);
@@ -83,7 +85,9 @@ export default async function StoryboardPage({
               <SectionsPanel
                 label={label}
                 pageId={page.pageId}
-                sectioning={sectioning}
+                initialSectioning={sectioningResult?.data ?? null}
+                initialVersion={sectioningResult?.version ?? 1}
+                availableVersions={sectioningVersions}
                 extraction={extraction?.data ?? null}
                 imageIds={page.imageIds}
                 sectionTypes={sectionTypes}

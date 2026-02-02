@@ -267,7 +267,7 @@ const textClassificationExecutor: JobExecutor = async (job, update) => {
 
 const pageSectioningExecutor: JobExecutor = async (job, update) => {
   const pageId = job.params?.pageId as string;
-  const result = await runPageSectioning(job.label, pageId);
+  const result = await runPageSectioning(job.label, pageId, { skipCache: true });
   update({ result, status: "completed", completedAt: Date.now() });
 };
 

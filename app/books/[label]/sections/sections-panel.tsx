@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PageSectioning } from "@/lib/books";
 import { TEXT_TYPE_COLORS } from "../extract/text-type-badge";
 import { LightboxImage } from "../extract/image-lightbox";
 import { usePipelineBusy } from "../use-pipeline-refresh";
+import { NodeHeader, type VersionApi } from "../node-header";
 
 interface TextEntry {
   text_type: string;
@@ -31,44 +32,56 @@ function badgeColor(textType: string): string {
 interface SectionsPanelProps {
   label: string;
   pageId: string;
-  sectioning: PageSectioning | null;
+  initialSectioning: PageSectioning | null;
+  initialVersion: number;
+  availableVersions: number[];
   extraction: PageTextClassification | null;
   imageIds: string[];
   sectionTypes: Record<string, string>;
 }
 
-function contrastText(hex: string): string {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? "#000000" : "#ffffff";
-}
-
 export function SectionsPanel({
   label,
   pageId,
-  sectioning: initialSectioning,
+  initialSectioning,
+  initialVersion,
+  availableVersions: initialAvailableVersions,
   extraction,
   imageIds,
   sectionTypes,
 }: SectionsPanelProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sectioning, setSectioning] = useState(initialSectioning);
+  const [versions, setVersions] = useState(initialAvailableVersions);
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState<string | null>(null);
   const pipelineBusy = usePipelineBusy(pageId, "sections");
+  const currentVersionRef = useRef(initialVersion);
 
-  const sectioning = initialSectioning;
+  const apiBase = `/api/books/${label}/pages/${pageId}/page-sectioning`;
+
+  const versionApi: VersionApi = useMemo(() => ({
+    loadVersion: async (v: number) => {
+      const res = await fetch(`${apiBase}?version=${v}`);
+      if (!res.ok) throw new Error("Failed to load version");
+      return res.json();
+    },
+    saveVersion: async (v: number) => {
+      const res = await fetch(apiBase, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: sectioning }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+  }), [apiBase, sectioning]);
 
   async function handleRerun() {
-    setLoading(true);
-    setError(null);
+    setRerunning(true);
+    setRerunError(null);
     try {
-      const res = await fetch(
-        `/api/books/${label}/pages/${pageId}/page-sectioning`,
-        { method: "POST" }
-      );
+      const res = await fetch(apiBase, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
@@ -81,24 +94,30 @@ export function SectionsPanel({
         try {
           const job = JSON.parse(e.data);
           if (job.status === "completed") {
-            setLoading(false);
+            const { version: newVersion, versions: newVersions, data: newData } = job.result as {
+              version: number; versions: number[]; data: PageSectioning;
+            };
+            setSectioning(newData);
+            currentVersionRef.current = newVersion;
+            setVersions(newVersions);
+            setRerunning(false);
             router.refresh();
             es.close();
           } else if (job.status === "failed") {
-            setError(job.error ?? "Sectioning failed");
-            setLoading(false);
+            setRerunError(job.error ?? "Sectioning failed");
+            setRerunning(false);
             es.close();
           }
         } catch { /* skip */ }
       });
       es.onerror = () => {
-        setError("Connection to job queue lost");
-        setLoading(false);
+        setRerunError("Connection to job queue lost");
+        setRerunning(false);
         es.close();
       };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setLoading(false);
+      setRerunError(err instanceof Error ? err.message : "Unknown error");
+      setRerunning(false);
     }
   }
 
@@ -118,33 +137,28 @@ export function SectionsPanel({
 
   return (
     <div>
-      {/* Sections header bar */}
-      <div className="flex items-center gap-2 bg-teal-600 px-4 py-2 text-sm font-semibold text-white">
-        <span>Sections</span>
-        {error && (
-          <span className="text-xs font-normal text-red-200">{error}</span>
-        )}
-        <button
-          type="button"
-          onClick={handleRerun}
-          disabled={loading || pipelineBusy}
-          className="ml-auto cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-teal-500 disabled:opacity-50 transition-colors"
-          title={sectioning ? "Rerun sectioning" : "Run sectioning"}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className={`h-4 w-4 ${loading || pipelineBusy ? "animate-spin" : ""}`}
-          >
-            <path
-              fillRule="evenodd"
-              d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.598a.75.75 0 00-.75.75v3.634a.75.75 0 001.5 0v-2.434l.311.312a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-10.624-2.85a5.5 5.5 0 019.201-2.465l.312.311H11.768a.75.75 0 000 1.5h3.634a.75.75 0 00.75-.75V3.53a.75.75 0 00-1.5 0v2.434l-.311-.312A7 7 0 002.629 8.79a.75.75 0 001.449.39z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </button>
-      </div>
+      <NodeHeader
+        title="Sections"
+        color="teal"
+        initialVersion={initialVersion}
+        initialVersions={versions}
+        versionApi={versionApi}
+        onVersionLoaded={(v, raw) => {
+          const resp = raw as { data: PageSectioning };
+          setSectioning(resp.data);
+          currentVersionRef.current = v;
+        }}
+        onVersionSaved={(newVersion, newVersions, raw) => {
+          const resp = raw as { data: PageSectioning };
+          setSectioning(resp.data);
+          currentVersionRef.current = newVersion;
+          setVersions(newVersions);
+        }}
+        rerunLoading={rerunning || pipelineBusy}
+        onRerun={handleRerun}
+        rerunTitle={sectioning ? "Rerun sectioning" : "Run sectioning"}
+        error={rerunError}
+      />
 
       {sectioning ? (
         <div className="space-y-4 p-4">
@@ -200,9 +214,6 @@ export function SectionsPanel({
                     </p>
                   )}
                   {(() => {
-                    // Group consecutive image parts together
-                    const chunks: { type: "text"; partId: string; group: { group_type: string; texts: TextEntry[] } }[]
-                      | { type: "images"; partIds: string[] }[] = [];
                     const result: ({ type: "text"; partId: string; group: { group_type: string; texts: TextEntry[] } }
                       | { type: "images"; partIds: string[] })[] = [];
                     for (const partId of section.part_ids) {

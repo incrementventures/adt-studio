@@ -136,15 +136,16 @@ export function putImage(
   const db = getDb(label);
   db.prepare(
     `INSERT INTO images (image_id, page_id, path, hash, width, height, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (image_id) DO UPDATE SET
-       page_id = excluded.page_id,
-       path = excluded.path,
-       hash = excluded.hash,
-       width = excluded.width,
-       height = excluded.height,
-       source = excluded.source`
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(imageId, pageId, imagePath, hash, width, height, source);
+}
+
+export function hasImage(label: string, imageId: string): boolean {
+  const db = getDb(label);
+  const row = db
+    .prepare("SELECT 1 FROM images WHERE image_id = ?")
+    .get(imageId);
+  return !!row;
 }
 
 export function getExtractedImages(
@@ -154,7 +155,7 @@ export function getExtractedImages(
   const db = getDb(label);
   return db
     .prepare(
-      "SELECT image_id, path FROM images WHERE page_id = ? AND source = 'extract' ORDER BY image_id"
+      "SELECT image_id, path FROM images WHERE page_id = ? AND source = 'extract' ORDER BY CASE WHEN image_id LIKE '%_page' THEN 0 ELSE 1 END, image_id"
     )
     .all(pageId) as { image_id: string; path: string }[];
 }
@@ -512,16 +513,36 @@ export function loadUnprunedImagesFromDir(
 // Page sectioning
 // ---------------------------------------------------------------------------
 
-export function getPageSectioning(
+export function listPageSectioningVersions(
   label: string,
   pageId: string
+): number[] {
+  return listVersions(label, "page-sectioning", pageId);
+}
+
+export function getPageSectioningVersion(
+  label: string,
+  pageId: string,
+  version: number
 ): PageSectioning | null {
   return getVersionData<PageSectioning>(
     label,
     "page-sectioning",
     pageId,
-    1
+    version
   );
+}
+
+export function getPageSectioning(
+  label: string,
+  pageId: string
+): { data: PageSectioning; version: number } | null {
+  const versions = listPageSectioningVersions(label, pageId);
+  if (versions.length === 0) return null;
+  const latest = versions[versions.length - 1];
+  const data = getPageSectioningVersion(label, pageId, latest);
+  if (!data) return null;
+  return { data, version: latest };
 }
 
 export { type PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
@@ -627,7 +648,7 @@ function buildPageSummary(
   // Get extracted image IDs from DB
   const imageRows = db
     .prepare(
-      "SELECT image_id FROM images WHERE page_id = ? AND source = 'extract' ORDER BY image_id"
+      "SELECT image_id FROM images WHERE page_id = ? AND source = 'extract' ORDER BY CASE WHEN image_id LIKE '%_page' THEN 0 ELSE 1 END, image_id"
     )
     .all(pageId) as { image_id: string }[];
   const imageIds = imageRows.map((r) => r.image_id);

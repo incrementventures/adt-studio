@@ -160,12 +160,7 @@ function SectionCard({
   const versionApi: VersionApi = useMemo(() => ({
     loadVersion: async (v: number) => {
       const res = await fetch(
-        `/api/books/${label}/pages/${pageId}/web-rendering/version`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sectionId, version: v }),
-        }
+        `/api/books/${label}/pages/${pageId}/web-rendering/version?sectionId=${sectionId}&version=${v}`
       );
       if (!res.ok) throw new Error("Failed to load version");
       return res.json();
@@ -174,7 +169,7 @@ function SectionCard({
       const res = await fetch(
         `/api/books/${label}/pages/${pageId}/web-rendering/version`,
         {
-          method: "PATCH",
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sectionId, version: v }),
         }
