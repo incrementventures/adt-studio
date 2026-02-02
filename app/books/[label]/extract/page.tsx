@@ -32,17 +32,19 @@ export default async function ExtractPage({
                 {page.rawText || <span className="text-faint italic">No raw text</span>}
               </pre>
             </div>
-            {page.imageIds.length > 0 && (
+            {page.imageIds.filter((id) => !id.endsWith("_page")).length > 0 && (
               <div className="grid grid-cols-6 gap-2 px-4 pb-4">
-                {page.imageIds.map((imageId) => (
-                  <LightboxImage
-                    key={imageId}
-                    src={`/api/books/${label}/pages/${page.pageId}/images/${imageId}`}
-                    alt={imageId}
-                    className="rounded-t border border-border"
-                    showDimensions
-                  />
-                ))}
+                {page.imageIds
+                  .filter((id) => !id.endsWith("_page"))
+                  .map((imageId) => (
+                    <LightboxImage
+                      key={imageId}
+                      src={`/api/books/${label}/pages/${page.pageId}/images/${imageId}`}
+                      alt={imageId}
+                      className="rounded-t border border-border"
+                      showDimensions
+                    />
+                  ))}
               </div>
             )}
           </section>
