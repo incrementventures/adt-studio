@@ -57,11 +57,14 @@ function phaseIndex(phase: Phase): number {
 /** Returns true if the pipeline is at or before the given panel's active phase */
 export function isPipelineBusy(
   phase: Phase | null,
-  panel: "text-classification" | "sections" | "web-rendering"
+  panel: "image-classification" | "text-classification" | "sections" | "web-rendering"
 ): boolean {
   if (!phase || phase === "completed") return false;
   const idx = phaseIndex(phase);
   switch (panel) {
+    // Image classification is busy during "Classifying images"
+    case "image-classification":
+      return idx <= phaseIndex("Classifying images");
     // Text classification is busy from queued through "Classifying text"
     case "text-classification":
       return idx <= phaseIndex("Classifying text");
@@ -189,7 +192,7 @@ export function PipelineSSEProvider({
 
 export function usePipelineBusy(
   pageId: string,
-  panel: "text-classification" | "sections" | "web-rendering"
+  panel: "image-classification" | "text-classification" | "sections" | "web-rendering"
 ): boolean {
   const store = useContext(PipelineCtx);
 

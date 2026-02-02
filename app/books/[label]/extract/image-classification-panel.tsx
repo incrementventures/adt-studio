@@ -137,15 +137,13 @@ export function ImageClassificationPanel({
       return;
     }
 
-    let cropId = "";
+    // Compute cropId outside the updater so React StrictMode double-invocation
+    // doesn't produce a different ID than what setPendingCrops receives.
+    const cropId = `${pageId}_crop_${Date.now()}`;
     setData((prev) => {
       const next: PageImageClassification = JSON.parse(
         JSON.stringify(prev ?? { images: [] })
       );
-
-      // Use a temp ID — the server assigns the real _imNNN from the global max.
-      // This avoids collisions with images created in other versions.
-      cropId = `${pageId}_crop_${Date.now()}`;
 
       const newEntry: ImageEntry = {
         image_id: cropId,

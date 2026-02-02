@@ -19,7 +19,12 @@ export interface EnrichedSection extends SectionRendering {
 interface WebRenderingPanelProps {
   label: string;
   pageId: string;
+  pageNumber?: number;
   sections: EnrichedSection[] | null;
+  panelToggles?: { images: boolean; text: boolean; sections: boolean };
+  panelBusy?: { images: boolean; text: boolean; sections: boolean };
+  panelLoaded?: { images: boolean; text: boolean; sections: boolean };
+  onTogglePanel?: (panel: "images" | "text" | "sections") => void;
 }
 
 /**
@@ -286,7 +291,12 @@ function SectionCard({
 export function WebRenderingPanel({
   label,
   pageId,
+  pageNumber,
   sections: initialSections,
+  panelToggles,
+  panelBusy,
+  panelLoaded,
+  onTogglePanel,
 }: WebRenderingPanelProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -525,11 +535,45 @@ export function WebRenderingPanel({
     <div>
       {/* Header bar */}
       <div className="flex items-center gap-2 bg-slate-700 px-4 py-2 text-sm font-semibold text-white">
-        <span>Web Pages</span>
+        <span>{pageNumber != null ? `Page ${pageNumber}` : "Web Pages"}</span>
         {error && (
           <span className="text-xs font-normal text-red-200">{error}</span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+        {onTogglePanel && (
+          <>
+            {(["images", "text", "sections"] as const).map((panel) => {
+              const colors =
+                panel === "images" ? { fill: "bg-amber-600", border: "border-amber-500", text: "text-amber-400", hoverText: "hover:text-amber-300" } :
+                panel === "text" ? { fill: "bg-indigo-600", border: "border-indigo-500", text: "text-indigo-400", hoverText: "hover:text-indigo-300" } :
+                { fill: "bg-teal-600", border: "border-teal-500", text: "text-teal-400", hoverText: "hover:text-teal-300" };
+              const busy = panelBusy?.[panel];
+              const loaded = panelLoaded?.[panel];
+              const open = panelToggles?.[panel];
+              let cls: string;
+              if (busy) {
+                cls = `${colors.border} border ${colors.text} animate-pulse`;
+              } else if (!loaded) {
+                cls = "border border-white/10 text-white/25 cursor-default";
+              } else if (open) {
+                cls = `${colors.fill} text-white border border-transparent`;
+              } else {
+                cls = `${colors.border} border ${colors.text} ${colors.hoverText}`;
+              }
+              return (
+                <button
+                  key={panel}
+                  type="button"
+                  onClick={() => loaded && onTogglePanel(panel)}
+                  disabled={!loaded && !busy}
+                  className={`rounded px-1.5 py-0.5 text-xs transition-colors ${cls} ${loaded ? "cursor-pointer" : ""}`}
+                >
+                  {panel === "images" ? "Images" : panel === "text" ? "Text" : "Sections"}
+                </button>
+              );
+            })}
+          </>
+        )}
         <button
           type="button"
           onClick={handleRerun}
@@ -554,9 +598,26 @@ export function WebRenderingPanel({
       </div>
 
       {initialSections === null ? (
-        <p className="p-4 text-sm italic text-muted">
-          No web rendering yet. Click the refresh button to run rendering.
-        </p>
+        <div className="space-y-6 p-6">
+          {/* Skeleton header */}
+          <div className="h-6 w-1/3 rounded bg-muted/30 animate-pulse" />
+          {/* Skeleton text lines */}
+          <div className="space-y-2.5">
+            <div className="h-3.5 w-full rounded bg-muted/20 animate-pulse" />
+            <div className="h-3.5 w-5/6 rounded bg-muted/20 animate-pulse" />
+            <div className="h-3.5 w-4/6 rounded bg-muted/20 animate-pulse" />
+          </div>
+          {/* Skeleton image + text row */}
+          <div className="flex gap-4">
+            <div className="h-32 w-40 shrink-0 rounded bg-muted/15 animate-pulse" />
+            <div className="flex-1 space-y-2.5 py-1">
+              <div className="h-3.5 w-full rounded bg-muted/20 animate-pulse" />
+              <div className="h-3.5 w-5/6 rounded bg-muted/20 animate-pulse" />
+              <div className="h-3.5 w-4/6 rounded bg-muted/20 animate-pulse" />
+              <div className="h-3.5 w-3/4 rounded bg-muted/20 animate-pulse" />
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="space-y-4 p-4">
           {sections.map((section) => (

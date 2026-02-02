@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   listPages,
   getTextClassification,
@@ -15,6 +14,7 @@ import { TextClassificationPanel } from "../extract/text-classification-panel";
 import { ImageClassificationPanel } from "../extract/image-classification-panel";
 import { SectionsPanel } from "../sections/sections-panel";
 import { WebRenderingPanel } from "./web-rendering-panel";
+import { StoryboardPageRow } from "./storyboard-page-row";
 import { PipelineSSEProvider } from "../use-pipeline-refresh";
 
 export default async function StoryboardPage({
@@ -46,61 +46,59 @@ export default async function StoryboardPage({
             <section
               key={page.pageId}
               id={page.pageId}
-              className="scroll-mt-16"
+              className="mb-6 scroll-mt-16"
             >
-              <Link
-                href={`/books/${label}/pages/${page.pageId}`}
-                className="flex items-center gap-3 py-4 text-faint hover:text-foreground transition-colors"
-              >
-                <div className="h-0.5 flex-1 bg-border" />
-                <span className="shrink-0 text-sm font-bold uppercase tracking-wider">page {i + 1}</span>
-                <div className="h-0.5 flex-1 bg-border" />
-              </Link>
-
               <div className="overflow-hidden rounded-lg border border-border">
-              {/* Image Classification */}
-              <ImageClassificationPanel
-                label={label}
-                pageId={page.pageId}
-                pageIndex={i}
-                imageIds={page.imageIds}
-                initialClassification={imageClassificationResult?.data ?? null}
-                initialVersion={imageClassificationResult?.version ?? 1}
-                availableVersions={imageClassificationVersions}
-                initialImageHashes={imageHashes}
-              />
-
-              {/* Text Classification */}
-              <TextClassificationPanel
-                label={label}
-                pageId={page.pageId}
-                initialData={extraction?.data ?? null}
-                initialVersion={extraction?.version ?? 1}
-                availableVersions={availableVersions}
-                textTypes={textTypeKeys}
-                groupTypes={groupTypeKeys}
-              />
-
-              {/* Sections */}
-              <SectionsPanel
-                label={label}
-                pageId={page.pageId}
-                initialSectioning={sectioningResult?.data ?? null}
-                initialVersion={sectioningResult?.version ?? 1}
-                availableVersions={sectioningVersions}
-                extraction={extraction?.data ?? null}
-                imageIds={page.imageIds}
-                sectionTypes={sectionTypes}
-                textTypes={textTypeKeys}
-                groupTypes={groupTypeKeys}
-              />
-
-              {/* Web Pages */}
-              <WebRenderingPanel
-                label={label}
-                pageId={page.pageId}
-                sections={webRenderingResult?.sections ?? null}
-              />
+              <StoryboardPageRow
+                panelLoaded={{
+                  images: imageClassificationResult?.data != null,
+                  text: extraction?.data != null,
+                  sections: sectioningResult?.data != null,
+                }}
+                webRenderingProps={{
+                  label,
+                  pageId: page.pageId,
+                  pageNumber: i + 1,
+                  sections: webRenderingResult?.sections ?? null,
+                }}
+              >
+                {[
+                  <ImageClassificationPanel
+                    key="images"
+                    label={label}
+                    pageId={page.pageId}
+                    pageIndex={i}
+                    imageIds={page.imageIds}
+                    initialClassification={imageClassificationResult?.data ?? null}
+                    initialVersion={imageClassificationResult?.version ?? 1}
+                    availableVersions={imageClassificationVersions}
+                    initialImageHashes={imageHashes}
+                  />,
+                  <TextClassificationPanel
+                    key="text"
+                    label={label}
+                    pageId={page.pageId}
+                    initialData={extraction?.data ?? null}
+                    initialVersion={extraction?.version ?? 1}
+                    availableVersions={availableVersions}
+                    textTypes={textTypeKeys}
+                    groupTypes={groupTypeKeys}
+                  />,
+                  <SectionsPanel
+                    key="sections"
+                    label={label}
+                    pageId={page.pageId}
+                    initialSectioning={sectioningResult?.data ?? null}
+                    initialVersion={sectioningResult?.version ?? 1}
+                    availableVersions={sectioningVersions}
+                    extraction={extraction?.data ?? null}
+                    imageIds={page.imageIds}
+                    sectionTypes={sectionTypes}
+                    textTypes={textTypeKeys}
+                    groupTypes={groupTypeKeys}
+                  />,
+                ]}
+              </StoryboardPageRow>
               </div>
             </section>
           );
