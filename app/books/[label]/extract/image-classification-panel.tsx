@@ -76,17 +76,37 @@ export function ImageClassificationPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const json = await res.json();
-      const { version: newVersion, versions: newVersions, imageHashes: newHashes, ...rest } = json;
-      setData(rest as PageImageClassification);
-      currentVersionRef.current = newVersion;
-      setVersions(newVersions ?? [newVersion]);
-      if (newHashes) setImageHashes(newHashes);
-      setIsDirty(false);
-      router.refresh();
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+
+      const es = new EventSource(`/api/queue?jobId=${jobId}`);
+      es.addEventListener("job", (e) => {
+        try {
+          const job = JSON.parse(e.data);
+          if (job.status === "completed") {
+            const { version: newVersion, versions: newVersions, imageHashes: newHashes, ...rest } = job.result;
+            setData(rest as PageImageClassification);
+            currentVersionRef.current = newVersion;
+            setVersions(newVersions ?? [newVersion]);
+            if (newHashes) setImageHashes(newHashes);
+            setIsDirty(false);
+            setRunning(false);
+            router.refresh();
+            es.close();
+          } else if (job.status === "failed") {
+            setError(job.error ?? "Classification failed");
+            setRunning(false);
+            es.close();
+          }
+        } catch { /* skip */ }
+      });
+      es.onerror = () => {
+        setError("Connection to job queue lost");
+        setRunning(false);
+        es.close();
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setRunning(false);
     }
   }

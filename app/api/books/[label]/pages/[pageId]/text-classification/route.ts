@@ -134,7 +134,7 @@ export async function PATCH(
     const nextVersion = latest.version + 1;
     putNodeData(label, "text-classification", pageId, nextVersion, data);
 
-    return NextResponse.json({ version: nextVersion, ...data });
+    return NextResponse.json({ version: nextVersion, versions: listTextClassificationVersions(label, pageId), ...data });
   }
 
   // Legacy single-field mutation path

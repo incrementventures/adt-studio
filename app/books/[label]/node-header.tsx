@@ -19,7 +19,7 @@ export interface VersionApi {
   saveVersion: (version: number) => Promise<{ version: number; versions: number[] }>;
 }
 
-export type NodeHeaderColor = "slate" | "amber" | "blue" | "emerald" | "purple" | "rose";
+export type NodeHeaderColor = "slate" | "amber" | "blue" | "emerald" | "purple" | "rose" | "indigo";
 
 const colorMap: Record<NodeHeaderColor, {
   bg: string;
@@ -84,6 +84,15 @@ const colorMap: Record<NodeHeaderColor, {
     dropdownItemHover: "hover:bg-rose-500",
     saveText: "text-rose-700",
   },
+  indigo: {
+    bg: "bg-indigo-600",
+    btnBg: "bg-indigo-500",
+    btnHover: "hover:bg-indigo-400",
+    rerunHover: "hover:bg-indigo-500",
+    dropdownBg: "bg-indigo-500",
+    dropdownItemHover: "hover:bg-indigo-400",
+    saveText: "text-indigo-700",
+  },
 };
 
 export interface NodeHeaderProps {
@@ -145,21 +154,26 @@ export function NodeHeader({
   const c = colorMap[color];
   const [version, setVersion] = useState(initialVersion);
   const [latestVersion, setLatestVersion] = useState(initialVersion);
-  const [versions, setVersions] = useState(initialVersions);
   const [isOldVersion, setIsOldVersion] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Versions list comes directly from parent — no internal copy.
+  const versions = initialVersions;
+
   const versionLabel = `v${version}`;
 
-  // Sync from parent when props change
+  // When the parent provides a new latest version (e.g. after rerun),
+  // jump to it so the label and arrow update together.
+  const parentLatest = versions.length > 0 ? versions[versions.length - 1] : initialVersion;
   useEffect(() => {
-    setVersion(initialVersion);
-    setLatestVersion(initialVersion);
-    setVersions(initialVersions);
-    setIsOldVersion(false);
-  }, [initialVersion, initialVersions]);
+    if (parentLatest > latestVersion) {
+      setVersion(parentLatest);
+      setLatestVersion(parentLatest);
+      setIsOldVersion(false);
+    }
+  }, [parentLatest, latestVersion]);
 
   // Close dropdown on outside click / escape
   useEffect(() => {
@@ -210,10 +224,12 @@ export function NodeHeader({
   async function handleSave() {
     setSavingVersion(true);
     try {
-      const result = await versionApi.saveVersion(version);
+      const [result] = await Promise.all([
+        versionApi.saveVersion(version),
+        new Promise((r) => setTimeout(r, 500)),
+      ]);
       setVersion(result.version);
       setLatestVersion(result.version);
-      setVersions(result.versions);
       setIsOldVersion(false);
       onVersionSaved?.(result.version, result.versions, result);
     } catch {
@@ -253,72 +269,44 @@ export function NodeHeader({
                 type="button"
                 onClick={handleSaveClick}
                 disabled={saveDisabled}
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 h-6 text-xs font-semibold hover:bg-slate-50 disabled:opacity-70 transition-colors ${c.saveText}`}
+                className={`inline-flex cursor-pointer items-center rounded bg-white px-2 h-6 text-xs font-semibold hover:bg-slate-50 disabled:opacity-70 transition-colors ${c.saveText}`}
               >
-                {isSaving && (
-                  <svg
-                    className="h-3 w-3 animate-spin"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                )}
                 Save
               </button>
             </>
           )}
-          {versions.length > 1 ? (
-            <div ref={dropdownRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className={`inline-flex items-center justify-center cursor-pointer rounded px-1.5 h-6 min-w-[2.5rem] text-xs font-semibold text-white transition-colors ${c.btnBg} ${c.btnHover}`}
-              >
-                {versionLabel} ▾
-              </button>
-              {dropdownOpen && (
-                <div className={`absolute right-0 top-full z-50 mt-1 max-h-64 w-[200%] overflow-y-auto rounded-lg shadow-lg ${c.dropdownBg}`}>
-                  {versions.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => handleLoadVersion(v)}
-                      className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-white ${c.dropdownItemHover}`}
-                    >
-                      {`v${v}`}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <span className={`inline-flex items-center justify-center rounded px-1.5 h-6 min-w-[2.5rem] text-xs font-semibold text-white ${c.btnBg}`}>
-              {versionLabel}
-            </span>
-          )}
+          <div ref={dropdownRef} className="relative">
+            <button
+              type="button"
+              onClick={versions.length > 1 ? () => setDropdownOpen(!dropdownOpen) : undefined}
+              className={`inline-flex items-center justify-center rounded px-1.5 h-6 min-w-[2.5rem] text-xs font-semibold text-white transition-colors ${c.btnBg} ${versions.length > 1 ? `cursor-pointer ${c.btnHover}` : ""}`}
+            >
+              {versionLabel} <span className={versions.length > 1 ? "" : "opacity-30"}>▾</span>
+            </button>
+            {dropdownOpen && (
+              <div className={`absolute right-0 top-full z-50 mt-1 max-h-64 w-[200%] overflow-y-auto rounded-lg shadow-lg ${c.dropdownBg}`}>
+                {versions.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => handleLoadVersion(v)}
+                    className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-white ${c.dropdownItemHover}`}
+                  >
+                    {`v${v}`}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {onRerun && (
             <button
               type="button"
               onClick={onRerun}
-              disabled={rerunDisabled || rerunLoading}
+              disabled={rerunDisabled || rerunLoading || isSaving}
               className={`cursor-pointer rounded p-1 text-white/80 hover:text-white disabled:opacity-50 transition-colors ${c.rerunHover}`}
               title={rerunTitle}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`h-4 w-4 ${rerunLoading ? "animate-spin" : ""}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`h-4 w-4 ${rerunLoading || isSaving ? "animate-spin" : ""}`}>
                 <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.598a.75.75 0 00-.75.75v3.634a.75.75 0 001.5 0v-2.434l.311.312a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-10.624-2.85a5.5 5.5 0 019.201-2.465l.312.311H11.768a.75.75 0 000 1.5h3.634a.75.75 0 00.75-.75V3.53a.75.75 0 00-1.5 0v2.434l-.311-.312A7 7 0 002.629 8.79a.75.75 0 001.449.39z" clipRule="evenodd" />
               </svg>
             </button>

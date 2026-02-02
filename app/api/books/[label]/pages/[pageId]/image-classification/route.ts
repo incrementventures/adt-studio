@@ -5,7 +5,6 @@ import sharp from "sharp";
 import {
   getBooksRoot,
   getPage,
-  getExtractedImages,
   getMaxImageNum,
   getImageHashes,
   listImageClassificationVersions,
@@ -16,12 +15,8 @@ import {
 } from "@/lib/books";
 import type { PageImageClassification } from "@/lib/pipeline/image-classification/image-classification-schema";
 import { hashBuffer } from "@/lib/pipeline/llm-log";
-import { loadBookConfig, getImageFilters } from "@/lib/config";
 import { resolveBookPaths } from "@/lib/pipeline/types";
-import {
-  classifyPageImages,
-  type ImageInput,
-} from "@/lib/pipeline/image-classification/classify-page-images";
+import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;
@@ -67,55 +62,12 @@ export async function POST(
     return NextResponse.json({ error: "Invalid params" }, { status: 400 });
   }
 
-  const booksRoot = getBooksRoot();
-  const paths = resolveBookPaths(label, booksRoot);
-
-  const page = getPage(label, pageId);
-  if (!page) {
+  if (!getPage(label, pageId)) {
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
 
-  // Discover extracted images from DB (excludes crops from prior classifications)
-  const imageInputs: ImageInput[] = [];
-  for (const row of getExtractedImages(label, pageId)) {
-    const absPath = path.join(paths.bookDir, row.path);
-    if (!fs.existsSync(absPath)) continue;
-    const buf = fs.readFileSync(absPath);
-    imageInputs.push({
-      image_id: row.image_id,
-      path: row.path,
-      buf,
-    });
-  }
-
-  const sizeFilter = getImageFilters(loadBookConfig(label)).size;
-  const classification = classifyPageImages(imageInputs, sizeFilter);
-
-  // Prepend the full page image as a pruned entry (available for cropping)
-  const pageImagePath = path.join(paths.imagesDir, `${pageId}_page.png`);
-  if (fs.existsSync(pageImagePath)) {
-    const pageBuf = fs.readFileSync(pageImagePath);
-    const pageWidth = pageBuf.readUInt32BE(16);
-    const pageHeight = pageBuf.readUInt32BE(20);
-    const im000Id = `${pageId}_im000`;
-    const im000Path = `images/${pageId}_page.png`;
-    putImage(label, im000Id, pageId, im000Path, hashBuffer(pageBuf), pageWidth, pageHeight, "page");
-    classification.images.unshift({
-      image_id: im000Id,
-      path: im000Path,
-      width: pageWidth,
-      height: pageHeight,
-      is_pruned: true,
-    });
-  }
-
-  // Write as next version
-  const existingVersions = listImageClassificationVersions(label, pageId);
-  const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
-  putNodeData(label, "image-classification", pageId, nextVersion, classification);
-
-  const imageHashes = getImageHashes(label, pageId);
-  return NextResponse.json({ version: nextVersion, versions: listImageClassificationVersions(label, pageId), imageHashes, ...classification });
+  const jobId = queue.enqueue("image-classification", label, { pageId });
+  return NextResponse.json({ jobId });
 }
 
 export async function PUT(
@@ -216,5 +168,6 @@ export async function PATCH(
   putNodeData(label, "image-classification", pageId, nextVersion, data);
 
   const imageHashes = getImageHashes(label, pageId);
-  return NextResponse.json({ version: nextVersion, imageHashes, ...data });
+  const versions = listImageClassificationVersions(label, pageId);
+  return NextResponse.json({ version: nextVersion, versions, imageHashes, ...data });
 }

@@ -22,9 +22,12 @@ import {
   getWebRenderingVersion,
   listWebRenderingVersions,
   listImageClassificationVersions,
+  listTextClassificationVersions,
+  getImageHashes,
   putNodeData,
-  resetNodeVersions,
+  putImage,
 } from "@/lib/books";
+import { hashBuffer } from "@/lib/pipeline/llm-log";
 import {
   loadBookConfig,
   getImageFilters,
@@ -370,7 +373,8 @@ export interface TextClassificationResult {
 
 export async function runTextClassification(
   label: string,
-  pageId: string
+  pageId: string,
+  options?: { skipCache?: boolean }
 ): Promise<TextClassificationResult> {
   const { config, ctx } = resolveCtx(label);
   const model = resolveModel(ctx, config.text_classification?.model);
@@ -414,15 +418,14 @@ export async function runTextClassification(
     textGroupTypes,
     prunedTextTypes: getPrunedTextTypes(config),
     promptName,
+    skipCache: options?.skipCache,
   });
 
-  // Write result to DB as version 1
-  putNodeData(label, "text-classification", pageId, 1, classification);
+  const existingVersions = listTextClassificationVersions(label, pageId);
+  const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+  putNodeData(label, "text-classification", pageId, nextVersion, classification);
 
-  // Reset version tracking
-  resetNodeVersions(label, "text-classification", pageId);
-
-  return { version: 1, ...classification };
+  return { version: nextVersion, versions: listTextClassificationVersions(label, pageId), ...classification };
 }
 
 // ---------------------------------------------------------------------------
@@ -515,9 +518,12 @@ export function runImageClassification(label: string, pageId: string) {
   const pageImagePath = path.join(paths.imagesDir, `${pageId}_page.png`);
   if (fs.existsSync(pageImagePath)) {
     const pageBuf = fs.readFileSync(pageImagePath);
+    const im000Id = `${pageId}_im000`;
+    const im000Path = `images/${pageId}_page.png`;
+    putImage(label, im000Id, pageId, im000Path, hashBuffer(pageBuf), pageBuf.readUInt32BE(16), pageBuf.readUInt32BE(20), "page");
     classification.images.unshift({
-      image_id: `${pageId}_im000`,
-      path: `images/${pageId}_page.png`,
+      image_id: im000Id,
+      path: im000Path,
       width: pageBuf.readUInt32BE(16),
       height: pageBuf.readUInt32BE(20),
       is_pruned: true,
@@ -528,7 +534,8 @@ export function runImageClassification(label: string, pageId: string) {
   const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
   putNodeData(label, "image-classification", pageId, nextVersion, classification);
 
-  return classification;
+  const imageHashes = getImageHashes(label, pageId);
+  return { version: nextVersion, versions: listImageClassificationVersions(label, pageId), imageHashes, ...classification };
 }
 
 // ---------------------------------------------------------------------------

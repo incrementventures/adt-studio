@@ -23,6 +23,7 @@ export async function classifyPage(options: {
   textGroupTypes: { key: string; description: string }[];
   prunedTextTypes: string[];
   promptName: string;
+  skipCache?: boolean;
 }): Promise<PageTextClassification> {
   const page = {
     pageNumber: options.pageNumber,
@@ -43,6 +44,7 @@ export async function classifyPage(options: {
       text_types: options.textTypes,
       text_group_types: options.textGroupTypes,
     },
+    skipCache: options.skipCache,
   });
 
   // Assign stable group IDs and default is_pruned

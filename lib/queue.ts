@@ -5,6 +5,7 @@ import {
   runWebRenderingSection,
   runWebEdit,
   runTextClassification,
+  runImageClassification,
   runPageSectioning,
   runPagePipeline,
   type WebEditParams,
@@ -19,6 +20,7 @@ export type JobType =
   | "web-rendering-section"
   | "web-edit"
   | "text-classification"
+  | "image-classification"
   | "page-sectioning"
   | "page-pipeline";
 
@@ -181,6 +183,7 @@ function getExecutor(type: JobType): JobExecutor | undefined {
     case "web-rendering-section": return webRenderingSectionExecutor;
     case "web-edit": return webEditExecutor;
     case "text-classification": return textClassificationExecutor;
+    case "image-classification": return imageClassificationExecutor;
     case "page-sectioning": return pageSectioningExecutor;
     case "page-pipeline": return pagePipelineExecutor;
   }
@@ -250,9 +253,15 @@ const webEditExecutor: JobExecutor = async (job, update) => {
   update({ result, status: "completed", completedAt: Date.now() });
 };
 
+const imageClassificationExecutor: JobExecutor = async (job, update) => {
+  const pageId = job.params?.pageId as string;
+  const result = runImageClassification(job.label, pageId);
+  update({ result, status: "completed", completedAt: Date.now() });
+};
+
 const textClassificationExecutor: JobExecutor = async (job, update) => {
   const pageId = job.params?.pageId as string;
-  const result = await runTextClassification(job.label, pageId);
+  const result = await runTextClassification(job.label, pageId, { skipCache: true });
   update({ result, status: "completed", completedAt: Date.now() });
 };
 
