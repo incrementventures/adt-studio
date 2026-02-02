@@ -481,6 +481,22 @@ export function loadUnprunedImages(
   return images;
 }
 
+export function loadAllImages(
+  label: string,
+  pageId: string
+): { image_id: string; imageBase64: string }[] {
+  const paths = resolveBookPaths(label, getBooksRoot());
+  const images: { image_id: string; imageBase64: string }[] = [];
+  for (const row of getExtractedImages(label, pageId)) {
+    if (row.image_id.endsWith("_page")) continue;
+    const filePath = path.join(paths.bookDir, row.path);
+    if (!fs.existsSync(filePath)) continue;
+    const imgBase64 = fs.readFileSync(filePath).toString("base64");
+    images.push({ image_id: row.image_id, imageBase64: imgBase64 });
+  }
+  return images;
+}
+
 export function loadUnprunedImagesFromDir(
   label: string,
   pageId: string,

@@ -17,6 +17,7 @@ import {
   getPageSectioning,
   getExtractedImages,
   loadUnprunedImages,
+  loadAllImages,
   resolvePageImagePath,
   getPage,
   getWebRenderingVersion,
@@ -68,9 +69,9 @@ function resolveCtx(label: string) {
   return { config, booksRoot, ctx };
 }
 
-/** Build image map for a page (image_id → base64, extraction-level unpruned). */
+/** Build image map for a page (image_id → base64, all non-page images). */
 function buildImageMap(label: string, pageId: string): Map<string, string> {
-  const allImages = loadUnprunedImages(label, pageId);
+  const allImages = loadAllImages(label, pageId);
   return new Map(allImages.map((img) => [img.image_id, img.imageBase64]));
 }
 
@@ -439,8 +440,13 @@ export async function runPageSectioning(
   // Embed all text groups from extraction
   sectioning.groups = buildGroupsRecord(extraction, pageId);
 
-  // Embed image assignments — images not assigned to any section are pruned
+  // Mark unassigned groups and images as pruned
   const assignedPartIds = new Set(sectioning.sections.flatMap((s) => s.part_ids));
+  for (const [groupId, group] of Object.entries(sectioning.groups)) {
+    if (!assignedPartIds.has(groupId)) {
+      group.is_pruned = true;
+    }
+  }
   sectioning.images = {};
   for (const img of images) {
     sectioning.images[img.image_id] = { is_pruned: !assignedPartIds.has(img.image_id) };

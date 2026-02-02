@@ -58,8 +58,8 @@ export type PageTextClassification = Omit<z.infer<typeof pageTextClassificationS
 export function buildGroupsRecord(
   extraction: PageTextClassification,
   pageId: string
-): Record<string, { group_type: string; texts: { text_type: string; text: string; is_pruned: boolean }[] }> {
-  const record: Record<string, { group_type: string; texts: { text_type: string; text: string; is_pruned: boolean }[] }> = {};
+): Record<string, { group_type: string; is_pruned?: boolean; texts: { text_type: string; text: string; is_pruned: boolean }[] }> {
+  const record: Record<string, { group_type: string; is_pruned?: boolean; texts: { text_type: string; text: string; is_pruned: boolean }[] }> = {};
   for (const [idx, g] of extraction.groups.entries()) {
     const groupId =
       g.group_id ?? pageId + "_gp" + String(idx + 1).padStart(3, "0");

@@ -168,9 +168,13 @@ export function SectionsPanel({
   function ensureEmbeddedData(draft: PageSectioning) {
     if (!draft.groups) {
       draft.groups = {};
-      // Snapshot all groups from extraction (not just those in sections)
+      const assignedIds = new Set(draft.sections.flatMap((s) => s.part_ids));
       for (const [id, g] of groupLookup) {
-        draft.groups[id] = JSON.parse(JSON.stringify(g));
+        const allTextsPruned = g.texts.length > 0 && g.texts.every((t) => t.is_pruned);
+        draft.groups[id] = {
+          ...JSON.parse(JSON.stringify(g)),
+          is_pruned: !assignedIds.has(id) && allTextsPruned,
+        };
       }
     }
     if (!draft.images) {
@@ -182,13 +186,16 @@ export function SectionsPanel({
         }
       }
     }
-    // Ensure every group/image ID appears in some section's part_ids.
-    // Append any missing IDs to the last section so they're draggable.
+    // Ensure every unpruned, unassigned group/image appears in some section.
     if (draft.sections.length > 0) {
       const assigned = new Set(draft.sections.flatMap((s) => s.part_ids));
       const missing = [
-        ...Object.keys(draft.groups ?? {}).filter((id) => !assigned.has(id)),
-        ...Object.keys(draft.images ?? {}).filter((id) => !assigned.has(id)),
+        ...Object.keys(draft.groups ?? {}).filter(
+          (id) => !assigned.has(id) && !draft.groups![id].is_pruned
+        ),
+        ...Object.keys(draft.images ?? {}).filter(
+          (id) => !assigned.has(id) && !draft.images![id].is_pruned
+        ),
       ];
       if (missing.length > 0) {
         draft.sections[draft.sections.length - 1].part_ids.push(...missing);
