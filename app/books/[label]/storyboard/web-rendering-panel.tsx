@@ -155,7 +155,7 @@ function SectionCard({
   const [displayedHtml, setDisplayedHtml] = useState(section.html);
   const sectionBusy = useSectionBusy(pageId, section.section_index);
 
-  const sectionId = `${pageId}_s${String(section.section_index).padStart(3, "0")}`;
+  const sectionId = `${pageId}_s${String(section.section_index + 1).padStart(3, "0")}`;
 
   // Sync displayed HTML from parent when props change (e.g. after rerun/edit)
   useEffect(() => {

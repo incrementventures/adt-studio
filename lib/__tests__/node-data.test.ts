@@ -43,29 +43,29 @@ describe("node_data with NULL data", () => {
 
   it("putNodeData accepts null data", () => {
     expect(() => {
-      putNodeData(label, "web-rendering", "pg001_s000", 1, null);
+      putNodeData(label, "web-rendering", "pg001_s001", 1, null);
     }).not.toThrow();
   });
 
   it("null data row is visible in listVersions", () => {
-    putNodeData(label, "web-rendering", "pg002_s000", 1, null);
-    const versions = listWebRenderingVersions(label, "pg002_s000");
+    putNodeData(label, "web-rendering", "pg002_s001", 1, null);
+    const versions = listWebRenderingVersions(label, "pg002_s001");
     expect(versions).toEqual([1]);
   });
 
   it("null data row stores SQL NULL", () => {
-    putNodeData(label, "web-rendering", "pg003_s000", 1, null);
+    putNodeData(label, "web-rendering", "pg003_s001", 1, null);
     const db = getDb(label);
     const row = db
       .prepare(
-        "SELECT data FROM node_data WHERE node = 'web-rendering' AND item_id = 'pg003_s000' AND version = 1"
+        "SELECT data FROM node_data WHERE node = 'web-rendering' AND item_id = 'pg003_s001' AND version = 1"
       )
       .get() as { data: string | null };
     expect(row.data).toBeNull();
   });
 
   it("getWebRendering returns sections array (not null) when only null-data rows exist", () => {
-    putNodeData(label, "web-rendering", "pg004_s000", 1, null);
+    putNodeData(label, "web-rendering", "pg004_s001", 1, null);
     const result = getWebRendering(label, "pg004");
     expect(result).not.toBeNull();
     expect(result!.sections).toEqual([]);
@@ -78,8 +78,8 @@ describe("node_data with NULL data", () => {
       reasoning: "test",
       html: "<p>Hello</p>",
     };
-    putNodeData(label, "web-rendering", "pg005_s000", 1, rendered);
-    putNodeData(label, "web-rendering", "pg005_s001", 1, null);
+    putNodeData(label, "web-rendering", "pg005_s001", 1, rendered);
+    putNodeData(label, "web-rendering", "pg005_s002", 1, null);
 
     const result = getWebRendering(label, "pg005");
     expect(result).not.toBeNull();

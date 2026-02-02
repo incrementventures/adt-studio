@@ -104,9 +104,19 @@ export async function runWebRendering(
   const promptName = config.web_rendering?.prompt ?? "web_generation_html";
 
   const sectionRenderings: SectionRendering[] = [];
+
+  // If there are no sections at all, write a sentinel null row so that
+  // getWebRendering returns { sections: [] } rather than null.
+  if (sectioning.sections.length === 0) {
+    const sectionId = `${pageId}_s001`;
+    const existingVersions = listWebRenderingVersions(label, sectionId);
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+    putNodeData(label, "web-rendering", sectionId, nextVersion, null);
+  }
+
   for (let si = 0; si < sectioning.sections.length; si++) {
     const section = sectioning.sections[si];
-    const sectionId = `${pageId}_s${String(si).padStart(3, "0")}`;
+    const sectionId = `${pageId}_s${String(si + 1).padStart(3, "0")}`;
 
     if (section.is_pruned) {
       const existingVersions = listWebRenderingVersions(label, sectionId);
@@ -154,7 +164,7 @@ export async function runWebRendering(
 
   return {
     sections: sectionRenderings.map((s) => {
-      const sectionId = `${pageId}_s${String(s.section_index).padStart(3, "0")}`;
+      const sectionId = `${pageId}_s${String(s.section_index + 1).padStart(3, "0")}`;
       const versions = listWebRenderingVersions(label, sectionId);
       const version = versions.length > 0 ? Math.max(...versions) : 1;
       return { ...s, version, versions };
@@ -217,7 +227,7 @@ export async function runWebRenderingSection(
     skipCache: options?.skipCache,
   });
 
-  const sectionId = `${pageId}_s${String(sectionIndex).padStart(3, "0")}`;
+  const sectionId = `${pageId}_s${String(sectionIndex + 1).padStart(3, "0")}`;
   const existingVersions = listWebRenderingVersions(label, sectionId);
   const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
   putNodeData(label, "web-rendering", sectionId, nextVersion, rendering);
@@ -255,7 +265,7 @@ export async function runWebEdit(
   const { config, ctx } = resolveCtx(label);
   const model = resolveModel(ctx, config.web_rendering?.model);
 
-  const sectionId = `${pageId}_s${String(sectionIndex).padStart(3, "0")}`;
+  const sectionId = `${pageId}_s${String(sectionIndex + 1).padStart(3, "0")}`;
 
   const existingVersions = listWebRenderingVersions(label, sectionId);
   if (existingVersions.length === 0) throw new Error(`Section ${sectionId} not found`);

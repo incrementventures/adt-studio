@@ -62,10 +62,10 @@ export async function POST(
   }
 
   if (jobIds.length === 0) {
-    return NextResponse.json(
-      { error: "No renderable sections found" },
-      { status: 400 }
-    );
+    // All sections are pruned or empty — enqueue a whole-page job so that
+    // runWebRendering writes null data for each section (same as CLI path).
+    const jobId = queue.enqueue("web-rendering", label, { pageId });
+    jobIds.push(jobId);
   }
 
   return NextResponse.json({ jobIds });

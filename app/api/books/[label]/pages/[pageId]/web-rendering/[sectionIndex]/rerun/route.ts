@@ -28,7 +28,7 @@ export async function POST(
   }
 
   // Validate section exists
-  const sectionId = `${pageId}_s${String(sectionIndex).padStart(3, "0")}`;
+  const sectionId = `${pageId}_s${String(sectionIndex + 1).padStart(3, "0")}`;
   const sectionVersions = listWebRenderingVersions(label, sectionId);
   if (sectionVersions.length === 0) {
     return NextResponse.json(
