@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PageSectioning } from "@/lib/books";
-import { TEXT_TYPE_COLORS } from "../extract/text-type-badge";
+import { TextTypeBadge } from "../extract/text-type-badge";
+import { EditableText } from "../extract/editable-text";
+import { TypeDropdown } from "../extract/type-dropdown";
 import { LightboxImage } from "../extract/image-lightbox";
 import { usePipelineBusy } from "../use-pipeline-refresh";
 import { NodeHeader, type VersionApi } from "../node-header";
@@ -25,10 +27,6 @@ interface PageTextClassification {
   groups: TextGroup[];
 }
 
-function badgeColor(textType: string): string {
-  return TEXT_TYPE_COLORS[textType] ?? TEXT_TYPE_COLORS.other;
-}
-
 interface SectionsPanelProps {
   label: string;
   pageId: string;
@@ -38,6 +36,8 @@ interface SectionsPanelProps {
   extraction: PageTextClassification | null;
   imageIds: string[];
   sectionTypes: Record<string, string>;
+  textTypes: string[];
+  groupTypes: string[];
 }
 
 export function SectionsPanel({
@@ -49,16 +49,35 @@ export function SectionsPanel({
   extraction,
   imageIds,
   sectionTypes,
+  textTypes,
+  groupTypes,
 }: SectionsPanelProps) {
   const router = useRouter();
   const [sectioning, setSectioning] = useState(initialSectioning);
   const [versions, setVersions] = useState(initialAvailableVersions);
+  const [isDirty, setIsDirty] = useState(false);
   const [rerunning, setRerunning] = useState(false);
   const [rerunError, setRerunError] = useState<string | null>(null);
   const pipelineBusy = usePipelineBusy(pageId, "sections");
   const currentVersionRef = useRef(initialVersion);
+  const textDragRef = useRef<{ partId: string; fromIndex: number } | null>(null);
+  const [textDragOver, setTextDragOver] = useState<{ partId: string; index: number } | null>(null);
+  const partDragRef = useRef<{ sectionIndex: number; fromIndex: number } | null>(null);
+  const [partDragOver, setPartDragOver] = useState<{ sectionIndex: number; index: number } | null>(null);
+
+  // Sync from server props when the pipeline produces new data
+  // (e.g. after router.refresh() from a batch run).
+  // Skip if the user has unsaved local edits.
+  useEffect(() => {
+    if (isDirty) return;
+    setSectioning(initialSectioning);
+    setVersions(initialAvailableVersions);
+    currentVersionRef.current = initialVersion;
+  }, [initialSectioning, initialVersion, initialAvailableVersions]);
 
   const apiBase = `/api/books/${label}/pages/${pageId}/page-sectioning`;
+
+  const sectionTypeKeys = Object.keys(sectionTypes);
 
   const versionApi: VersionApi = useMemo(() => ({
     loadVersion: async (v: number) => {
@@ -100,6 +119,7 @@ export function SectionsPanel({
             setSectioning(newData);
             currentVersionRef.current = newVersion;
             setVersions(newVersions);
+            setIsDirty(false);
             setRerunning(false);
             router.refresh();
             es.close();
@@ -121,7 +141,7 @@ export function SectionsPanel({
     }
   }
 
-  // Build a lookup from group_id -> group data
+  // Build a lookup from group_id -> group data (from extraction)
   const groupLookup = new Map<
     string,
     { group_type: string; texts: TextEntry[] }
@@ -135,6 +155,346 @@ export function SectionsPanel({
     });
   }
 
+  function ensureEmbeddedData(draft: PageSectioning) {
+    if (!draft.groups) {
+      draft.groups = {};
+      // Snapshot all groups from extraction (not just those in sections)
+      for (const [id, g] of groupLookup) {
+        draft.groups[id] = JSON.parse(JSON.stringify(g));
+      }
+    }
+    if (!draft.images) {
+      const assignedIds = new Set(draft.sections.flatMap((s) => s.part_ids));
+      draft.images = {};
+      for (const imgId of imageIds) {
+        if (!groupLookup.has(imgId)) {
+          draft.images[imgId] = { is_pruned: !assignedIds.has(imgId) };
+        }
+      }
+    }
+    // Ensure every group/image ID appears in some section's part_ids.
+    // Append any missing IDs to the last section so they're draggable.
+    if (draft.sections.length > 0) {
+      const assigned = new Set(draft.sections.flatMap((s) => s.part_ids));
+      const missing = [
+        ...Object.keys(draft.groups ?? {}).filter((id) => !assigned.has(id)),
+        ...Object.keys(draft.images ?? {}).filter((id) => !assigned.has(id)),
+      ];
+      if (missing.length > 0) {
+        draft.sections[draft.sections.length - 1].part_ids.push(...missing);
+      }
+    }
+  }
+
+  function applyEdit(mutator: (draft: PageSectioning) => void) {
+    setSectioning((prev) => {
+      if (!prev) return prev;
+      const next: PageSectioning = JSON.parse(JSON.stringify(prev));
+      ensureEmbeddedData(next);
+      mutator(next);
+      return next;
+    });
+    setIsDirty(true);
+  }
+
+  async function discardEdits() {
+    try {
+      const json = await versionApi.loadVersion(currentVersionRef.current);
+      const resp = json as { data: PageSectioning };
+      setSectioning(resp.data);
+    } catch {
+      // ignore
+    }
+    setIsDirty(false);
+  }
+
+  function resolveGroup(partId: string): { group_type: string; texts: TextEntry[] } | undefined {
+    return sectioning?.groups?.[partId] ?? groupLookup.get(partId);
+  }
+
+  function renderPartChunks(partIds: string[], sectionIndex?: number) {
+    const canDragParts = sectionIndex != null;
+
+    function partDragHandlers(pi: number) {
+      if (!canDragParts) return {};
+      const si = sectionIndex!;
+      return {
+        draggable: true,
+        onDragStart: (e: React.DragEvent) => {
+          // Don't start part drag if a text drag is active
+          if (textDragRef.current) { e.preventDefault(); return; }
+          partDragRef.current = { sectionIndex: si, fromIndex: pi };
+          e.dataTransfer.effectAllowed = "move";
+        },
+        onDragOver: (e: React.DragEvent) => {
+          if (!partDragRef.current || partDragRef.current.sectionIndex !== si) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setPartDragOver({ sectionIndex: si, index: pi });
+        },
+        onDragLeave: () => {
+          setPartDragOver((prev) =>
+            prev?.sectionIndex === si && prev.index === pi ? null : prev
+          );
+        },
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          const src = partDragRef.current;
+          if (!src || src.sectionIndex !== si || src.fromIndex === pi) {
+            partDragRef.current = null;
+            setPartDragOver(null);
+            return;
+          }
+          applyEdit((d) => {
+            const arr = d.sections[si].part_ids;
+            const [item] = arr.splice(src.fromIndex, 1);
+            arr.splice(pi, 0, item);
+          });
+          partDragRef.current = null;
+          setPartDragOver(null);
+        },
+        onDragEnd: () => {
+          partDragRef.current = null;
+          setPartDragOver(null);
+        },
+      };
+    }
+
+    function partDropIndicator(pi: number) {
+      if (!canDragParts) return "";
+      return partDragOver?.sectionIndex === sectionIndex && partDragOver.index === pi
+        ? " border-t-2 border-indigo-400"
+        : " border-t-2 border-transparent";
+    }
+
+    return partIds.map((partId, pi) => {
+      const group = resolveGroup(partId);
+      if (group) {
+        const groupPruned = sectioning?.groups?.[partId]?.is_pruned ?? false;
+        return (
+          <div key={partId} className={`group/group flex items-start gap-1.5${partDropIndicator(pi)}`} {...partDragHandlers(pi)}>
+            {canDragParts && (
+              <div className="mt-3 flex shrink-0 cursor-grab items-center active:cursor-grabbing opacity-0 group-hover/group:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-faint">
+                  <path fillRule="evenodd" d="M2 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z" clipRule="evenodd" />
+                </svg>
+              </div>
+            )}
+            <button
+              type="button"
+              title={
+                groupPruned
+                  ? "Pruned — click to unprune group"
+                  : "Click to prune group"
+              }
+              onClick={() =>
+                applyEdit((d) => {
+                  if (d.groups?.[partId]) {
+                    d.groups[partId].is_pruned = !groupPruned;
+                  }
+                })
+              }
+              className={`mt-3 shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${groupPruned ? "" : " opacity-0 group-hover/group:opacity-100"}`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-3.5 w-3.5"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.965 4.904l9.131 9.131a6.5 6.5 0 00-9.131-9.131zm8.07 10.192L4.904 5.965a6.5 6.5 0 009.131 9.131zM4.343 4.343a8 8 0 1111.314 11.314A8 8 0 014.343 4.343z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+            <div className={`min-w-0 flex-1 rounded border border-border bg-background p-3${groupPruned ? " opacity-40" : ""}`}>
+              <div className="mb-1.5 flex items-center justify-between">
+                <TypeDropdown
+                  currentType={group.group_type}
+                  types={groupTypes}
+                  onSelect={(newType) => {
+                    applyEdit((d) => {
+                      if (d.groups?.[partId]) {
+                        d.groups[partId].group_type = newType;
+                      }
+                    });
+                  }}
+                />
+                <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
+                  {partId}
+                </span>
+              </div>
+              <div className="space-y-0">
+                {group.texts.map((entry, ti) => (
+                  <div
+                    key={ti}
+                    draggable
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      textDragRef.current = { partId, fromIndex: ti };
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(e) => {
+                      if (textDragRef.current?.partId !== partId) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "move";
+                      setTextDragOver({ partId, index: ti });
+                    }}
+                    onDragLeave={() => {
+                      setTextDragOver((prev) =>
+                        prev?.partId === partId && prev.index === ti ? null : prev
+                      );
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const src = textDragRef.current;
+                      if (!src || src.partId !== partId || src.fromIndex === ti) {
+                        textDragRef.current = null;
+                        setTextDragOver(null);
+                        return;
+                      }
+                      applyEdit((d) => {
+                        if (d.groups?.[partId]) {
+                          const arr = d.groups[partId].texts;
+                          const [item] = arr.splice(src.fromIndex, 1);
+                          arr.splice(ti, 0, item);
+                        }
+                      });
+                      textDragRef.current = null;
+                      setTextDragOver(null);
+                    }}
+                    onDragEnd={() => {
+                      textDragRef.current = null;
+                      setTextDragOver(null);
+                    }}
+                    className={`group/entry flex items-start gap-1.5 py-0.5${entry.is_pruned ? " opacity-40 line-through" : ""}${textDragOver?.partId === partId && textDragOver.index === ti ? " border-t-2 border-indigo-400" : " border-t-2 border-transparent"}`}
+                  >
+                    <div
+                      className={`mt-0.5 flex shrink-0 cursor-grab items-center gap-0.5 active:cursor-grabbing ${entry.is_pruned ? "" : "opacity-0 group-hover/entry:opacity-100"}`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-faint">
+                        <path fillRule="evenodd" d="M2 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <button
+                      type="button"
+                      title={
+                        entry.is_pruned
+                          ? "Pruned — click to unprune"
+                          : "Click to prune"
+                      }
+                      onClick={() =>
+                        applyEdit((d) => {
+                          if (d.groups?.[partId]) {
+                            d.groups[partId].texts[ti].is_pruned = !entry.is_pruned;
+                          }
+                        })
+                      }
+                      className={`mt-0.5 shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${entry.is_pruned ? "" : " opacity-0 group-hover/entry:opacity-100"}`}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="h-3.5 w-3.5"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M5.965 4.904l9.131 9.131a6.5 6.5 0 00-9.131-9.131zm8.07 10.192L4.904 5.965a6.5 6.5 0 009.131 9.131zM4.343 4.343a8 8 0 1111.314 11.314A8 8 0 014.343 4.343z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </button>
+                    <EditableText
+                      text={entry.text}
+                      onSave={(newText) => {
+                        applyEdit((d) => {
+                          if (d.groups?.[partId]) {
+                            d.groups[partId].texts[ti].text = newText;
+                          }
+                        });
+                      }}
+                    />
+                    <div className="shrink-0">
+                      <TextTypeBadge
+                        label={label}
+                        pageId={pageId}
+                        groupIndex={0}
+                        textIndex={ti}
+                        currentType={entry.text_type}
+                        textTypes={textTypes}
+                        onTypeChange={(newType) => {
+                          applyEdit((d) => {
+                            if (d.groups?.[partId]) {
+                              d.groups[partId].texts[ti].text_type = newType;
+                            }
+                          });
+                          return Promise.resolve(true);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // Image part
+      const imgPruned = sectioning?.images?.[partId]?.is_pruned ?? false;
+      return (
+        <div key={partId} className={`group/img flex items-start gap-1.5 pl-6${partDropIndicator(pi)}`} {...partDragHandlers(pi)}>
+          {canDragParts && (
+            <div className="mt-3 flex shrink-0 cursor-grab items-center active:cursor-grabbing opacity-0 group-hover/img:opacity-100">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-faint">
+                <path fillRule="evenodd" d="M2 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z" clipRule="evenodd" />
+              </svg>
+            </div>
+          )}
+          <div className="relative w-40">
+            <LightboxImage
+              src={`/api/books/${label}/pages/${pageId}/images/${partId}?v=${sectioning?.image_classification_version ?? ""}`}
+              alt={partId}
+              className={`w-full rounded-t border border-border${imgPruned ? " opacity-50" : ""}`}
+              showDimensions
+            />
+            <button
+              type="button"
+              onClick={() =>
+                applyEdit((d) => {
+                  if (!d.images) d.images = {};
+                  d.images[partId] = { is_pruned: !imgPruned };
+                })
+              }
+              title={imgPruned ? "Unprune image" : "Prune image"}
+              className={`absolute top-1.5 right-1.5 rounded-md p-1 transition-colors bg-red-500/80 text-white hover:bg-red-500 ${
+                imgPruned ? "" : "invisible group-hover/img:visible"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-5 w-5"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.965 4.904l9.131 9.131a6.5 6.5 0 00-9.131-9.131zm8.07 10.192L4.904 5.965a6.5 6.5 0 009.131 9.131zM4.343 4.343a8 8 0 1111.314 11.314A8 8 0 014.343 4.343z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      );
+    });
+  }
+
+
   return (
     <div>
       <NodeHeader
@@ -147,16 +507,21 @@ export function SectionsPanel({
           const resp = raw as { data: PageSectioning };
           setSectioning(resp.data);
           currentVersionRef.current = v;
+          setIsDirty(false);
         }}
         onVersionSaved={(newVersion, newVersions, raw) => {
           const resp = raw as { data: PageSectioning };
           setSectioning(resp.data);
           currentVersionRef.current = newVersion;
           setVersions(newVersions);
+          setIsDirty(false);
         }}
         rerunLoading={rerunning || pipelineBusy}
+        rerunDisabled={isDirty}
         onRerun={handleRerun}
         rerunTitle={sectioning ? "Rerun sectioning" : "Run sectioning"}
+        isDirty={isDirty}
+        onDirtyDiscard={discardEdits}
         error={rerunError}
       />
 
@@ -175,13 +540,20 @@ export function SectionsPanel({
             return (
               <div
                 key={si}
-                className={`rounded-lg border border-border bg-surface/30${section.is_pruned ? " opacity-40" : ""}`}
+                className={`group/section rounded-lg border border-border bg-surface/30${section.is_pruned ? " opacity-40" : ""}`}
               >
                 {/* Section header */}
                 <div className="flex items-center gap-2 px-4 py-2.5">
-                  <span className="text-xs font-medium uppercase tracking-wider text-faint">
-                    {section.section_type.replace(/_/g, " ")}
-                  </span>
+                  <TypeDropdown
+                    currentType={section.section_type}
+                    types={sectionTypeKeys}
+                    onSelect={(newType) => {
+                      applyEdit((d) => {
+                        d.sections[si].section_type = newType;
+                      });
+                    }}
+                    className="relative"
+                  />
                   <div className="flex items-center gap-1.5">
                     <span
                       className="inline-block h-3.5 w-3.5 rounded border border-border"
@@ -204,79 +576,43 @@ export function SectionsPanel({
                       {typeDescription}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    title={
+                      section.is_pruned
+                        ? "Pruned — click to unprune"
+                        : "Click to prune section"
+                    }
+                    onClick={() =>
+                      applyEdit((d) => {
+                        d.sections[si].is_pruned = !section.is_pruned;
+                      })
+                    }
+                    className={`shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${section.is_pruned ? "" : " opacity-0 group-hover/section:opacity-100"}`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.965 4.904l9.131 9.131a6.5 6.5 0 00-9.131-9.131zm8.07 10.192L4.904 5.965a6.5 6.5 0 009.131 9.131zM4.343 4.343a8 8 0 1111.314 11.314A8 8 0 014.343 4.343z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
                 </div>
 
-                {/* Section content — parts in order, consecutive images grouped */}
+                {/* Section content — assigned parts, then unassigned parts pruned */}
                 <div className="space-y-3 px-4 pb-4">
                   {section.part_ids.length === 0 && (
                     <p className="text-sm italic text-faint">
                       No parts assigned to this section.
                     </p>
                   )}
-                  {(() => {
-                    const result: ({ type: "text"; partId: string; group: { group_type: string; texts: TextEntry[] } }
-                      | { type: "images"; partIds: string[] })[] = [];
-                    for (const partId of section.part_ids) {
-                      const group = groupLookup.get(partId);
-                      if (group) {
-                        result.push({ type: "text", partId, group });
-                      } else {
-                        const last = result[result.length - 1];
-                        if (last && last.type === "images") {
-                          last.partIds.push(partId);
-                        } else {
-                          result.push({ type: "images", partIds: [partId] });
-                        }
-                      }
-                    }
-                    return result.map((chunk) => {
-                      if (chunk.type === "text") {
-                        return (
-                          <div key={chunk.partId} className="rounded border border-border bg-background p-3">
-                            <div className="mb-1.5 flex items-center justify-between">
-                              <span className="text-xs font-medium uppercase tracking-wider text-faint">
-                                {chunk.group.group_type}
-                              </span>
-                              <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
-                                {chunk.partId}
-                              </span>
-                            </div>
-                            <div className="space-y-1.5">
-                              {chunk.group.texts.map((entry, ti) => (
-                                <div
-                                  key={ti}
-                                  className={`flex items-start justify-between gap-3${entry.is_pruned ? " opacity-40 line-through" : ""}`}
-                                >
-                                  <span className="flex-1 font-mono text-xs whitespace-pre-wrap">
-                                    {entry.text}
-                                  </span>
-                                  <span
-                                    className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor(entry.text_type)}`}
-                                  >
-                                    {entry.text_type}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={chunk.partIds[0]} className="flex flex-wrap gap-2">
-                          {chunk.partIds.map((partId) => (
-                            <div key={partId} className="w-40">
-                              <LightboxImage
-                                src={`/api/books/${label}/pages/${pageId}/images/${partId}?v=${sectioning?.image_classification_version ?? ""}`}
-                                alt={partId}
-                                className="w-full rounded-t border border-border"
-                                showDimensions
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    });
-                  })()}
+                  {renderPartChunks(section.part_ids, si)}
                 </div>
               </div>
             );

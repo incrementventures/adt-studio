@@ -40,17 +40,14 @@ import {
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import { createContext, resolveModel } from "@/lib/pipeline/node";
 import type { LLMProvider } from "@/lib/pipeline/node";
-import {
-  renderSection,
-  type RenderSectionText,
-  type RenderSectionImage,
-} from "@/lib/pipeline/web-rendering/render-section";
+import { renderSection } from "@/lib/pipeline/web-rendering/render-section";
+import { collectSectionInputs } from "@/lib/pipeline/web-rendering/collect-section-inputs";
 import type { SectionRendering } from "@/lib/pipeline/web-rendering/web-rendering-schema";
 import { editSection, type Annotation } from "@/lib/pipeline/web-rendering/edit-section";
 import { classifyPage } from "@/lib/pipeline/text-classification/classify-page";
 import { buildLlmTextClassificationSchema } from "@/lib/pipeline/text-classification/text-classification-schema";
 import { sectionPage } from "@/lib/pipeline/page-sectioning/section-page";
-import { buildUnprunedGroupSummaries } from "@/lib/pipeline/text-classification/text-classification-schema";
+import { buildUnprunedGroupSummaries, buildGroupsRecord } from "@/lib/pipeline/text-classification/text-classification-schema";
 import {
   classifyPageImages,
   type ImageInput,
@@ -71,42 +68,10 @@ function resolveCtx(label: string) {
   return { config, booksRoot, ctx };
 }
 
-/** Build the text-id lookup that web-rendering and web-edit both need. */
-function buildTextLookup(
-  label: string,
-  pageId: string
-): {
-  textLookup: Map<string, RenderSectionText[]>;
-  imageMap: Map<string, string>;
-} {
-  const extractionResult = getTextClassification(label, pageId);
-  if (!extractionResult) throw new Error("No text classification found");
-  const extraction = extractionResult.data;
-
-  const textLookup = new Map<string, RenderSectionText[]>();
-  extraction.groups.forEach((g, idx) => {
-    const groupId =
-      g.group_id ?? pageId + "_gp" + String(idx + 1).padStart(3, "0");
-    const texts: RenderSectionText[] = [];
-    g.texts.forEach((t, ti) => {
-      if (t.is_pruned) return;
-      texts.push({
-        text_id: groupId + "_t" + String(ti + 1).padStart(3, "0"),
-        text_type: t.text_type,
-        text: t.text,
-      });
-    });
-    if (texts.length > 0) {
-      textLookup.set(groupId, texts);
-    }
-  });
-
+/** Build image map for a page (image_id → base64, extraction-level unpruned). */
+function buildImageMap(label: string, pageId: string): Map<string, string> {
   const allImages = loadUnprunedImages(label, pageId);
-  const imageMap = new Map(
-    allImages.map((img) => [img.image_id, img.imageBase64])
-  );
-
-  return { textLookup, imageMap };
+  return new Map(allImages.map((img) => [img.image_id, img.imageBase64]));
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +98,7 @@ export async function runWebRendering(
   if (!sectioningResult) throw new Error("No page sectioning found");
   const sectioning = sectioningResult.data;
 
-  const { textLookup, imageMap } = buildTextLookup(label, pageId);
+  const imageMap = buildImageMap(label, pageId);
 
   const promptName = config.web_rendering?.prompt ?? "web_generation_html";
 
@@ -142,14 +107,12 @@ export async function runWebRendering(
     const section = sectioning.sections[si];
     if (section.is_pruned) continue;
 
-    const texts: RenderSectionText[] = [];
-    const images: RenderSectionImage[] = [];
-    for (const partId of section.part_ids) {
-      const groupTexts = textLookup.get(partId);
-      if (groupTexts) texts.push(...groupTexts);
-      const imgBase64 = imageMap.get(partId);
-      if (imgBase64) images.push({ image_id: partId, image_base64: imgBase64 });
-    }
+    const { texts, images } = collectSectionInputs({
+      section,
+      sectioning,
+      imageMap,
+      pageId,
+    });
 
     if (texts.length === 0 && images.length === 0) continue;
 
@@ -226,16 +189,14 @@ export async function runWebRenderingSection(
   if (!section) throw new Error(`Section ${sectionIndex} not found`);
   if (section.is_pruned) throw new Error(`Section ${sectionIndex} is pruned`);
 
-  const { textLookup, imageMap } = buildTextLookup(label, pageId);
+  const imageMap = buildImageMap(label, pageId);
 
-  const texts: RenderSectionText[] = [];
-  const images: RenderSectionImage[] = [];
-  for (const partId of section.part_ids) {
-    const groupTexts = textLookup.get(partId);
-    if (groupTexts) texts.push(...groupTexts);
-    const imgBase64 = imageMap.get(partId);
-    if (imgBase64) images.push({ image_id: partId, image_base64: imgBase64 });
-  }
+  const { texts, images } = collectSectionInputs({
+    section,
+    sectioning: sectioningResult.data,
+    imageMap,
+    pageId,
+  });
 
   if (texts.length === 0 && images.length === 0) {
     throw new Error(`Section ${sectionIndex} has no texts or images`);
@@ -310,22 +271,18 @@ export async function runWebEdit(
   let allowedImageIds: string[] | undefined;
   const sectioningResult = getPageSectioning(label, pageId);
   try {
-    const { textLookup } = buildTextLookup(label, pageId);
     if (sectioningResult) {
       const section = sectioningResult.data.sections[sectionIndex];
       if (section) {
-        const allImgs = loadUnprunedImages(label, pageId);
-        const imageIdSet = new Set(allImgs.map((img) => img.image_id));
-
-        const textIds: string[] = [];
-        const imageIds: string[] = [];
-        for (const partId of section.part_ids) {
-          const groupTexts = textLookup.get(partId);
-          if (groupTexts) textIds.push(...groupTexts.map((t) => t.text_id));
-          if (imageIdSet.has(partId)) imageIds.push(partId);
-        }
-        allowedTextIds = textIds;
-        allowedImageIds = imageIds;
+        const imageMap = buildImageMap(label, pageId);
+        const { texts, images: imgs } = collectSectionInputs({
+          section,
+          sectioning: sectioningResult.data,
+          imageMap,
+          pageId,
+        });
+        allowedTextIds = texts.map((t) => t.text_id);
+        allowedImageIds = imgs.map((i) => i.image_id);
       }
     }
   } catch {
@@ -481,6 +438,16 @@ export async function runPageSectioning(
   const prunedSet = new Set(prunedSectionTypes);
   for (const s of sectioning.sections) {
     s.is_pruned = prunedSet.has(s.section_type);
+  }
+
+  // Embed all text groups from extraction
+  sectioning.groups = buildGroupsRecord(extraction, pageId);
+
+  // Embed image assignments — images not assigned to any section are pruned
+  const assignedPartIds = new Set(sectioning.sections.flatMap((s) => s.part_ids));
+  sectioning.images = {};
+  for (const img of images) {
+    sectioning.images[img.image_id] = { is_pruned: !assignedPartIds.has(img.image_id) };
   }
 
   // Record classification versions used

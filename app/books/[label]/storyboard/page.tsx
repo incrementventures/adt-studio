@@ -91,6 +91,8 @@ export default async function StoryboardPage({
                 extraction={extraction?.data ?? null}
                 imageIds={page.imageIds}
                 sectionTypes={sectionTypes}
+                textTypes={textTypeKeys}
+                groupTypes={groupTypeKeys}
               />
 
               {/* Web Pages */}

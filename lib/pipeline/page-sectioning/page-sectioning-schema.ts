@@ -33,4 +33,6 @@ export type PageSectioning = {
   }>;
   text_classification_version?: number;
   image_classification_version?: number;
+  groups?: Record<string, { group_type: string; is_pruned?: boolean; texts: { text_type: string; text: string; is_pruned: boolean }[] }>;
+  images?: Record<string, { is_pruned: boolean }>;
 };

@@ -12,12 +12,11 @@ import {
   type Node,
 } from "../node";
 import { pagesNode } from "../extract/extract";
-import { textClassificationNode } from "../text-classification/text-classification";
 import { imageClassificationNode } from "../image-classification/image-classification";
 import { sectionsNode } from "../page-sectioning/page-sectioning";
 import { loadUnprunedImagesFromDir, countPages } from "../../books";
-import type { PageTextClassification } from "../text-classification/text-classification-schema";
-import { renderSection, type RenderSectionText, type RenderSectionImage } from "./render-section";
+import { renderSection } from "./render-section";
+import { collectSectionInputs } from "./collect-section-inputs";
 
 export { renderSection } from "./render-section";
 
@@ -54,10 +53,9 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
           try {
             subscriber.next({ phase: "loading", label: ctx.label });
 
-            const [allPages, allExtractions, allImageClassifications, allSectionings] =
+            const [allPages, allImageClassifications, allSectionings] =
               await Promise.all([
                 resolveNode(pagesNode, ctx),
-                resolveNode(textClassificationNode, ctx),
                 resolveNode(imageClassificationNode, ctx),
                 resolveNode(sectionsNode, ctx),
               ]);
@@ -81,7 +79,6 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
 
             async function processPage(i: number): Promise<void> {
               const p = allPages[i];
-              const extraction: PageTextClassification = allExtractions[i];
               const sectioning = allSectionings[i];
 
               // Read page image as base64
@@ -101,44 +98,18 @@ export const webRenderingNode: Node<WebRendering[]> = defineNode<
                 allImagesForPage.map((img) => [img.image_id, img.imageBase64])
               );
 
-              // Build text lookup: group_id -> array of text entries with IDs
-              const textLookup = new Map<string, RenderSectionText[]>();
-              extraction.groups.forEach((g, idx) => {
-                const groupId =
-                  g.group_id ?? p.pageId + "_gp" + String(idx + 1).padStart(3, "0");
-                const texts: RenderSectionText[] = [];
-                g.texts.forEach((t, ti) => {
-                  if (t.is_pruned) return;
-                  texts.push({
-                    text_id: groupId + "_t" + String(ti + 1).padStart(3, "0"),
-                    text_type: t.text_type,
-                    text: t.text,
-                  });
-                });
-                if (texts.length > 0) {
-                  textLookup.set(groupId, texts);
-                }
-              });
-
               // Render each non-pruned section
               const sectionRenderings = [];
               for (let si = 0; si < sectioning.sections.length; si++) {
                 const section = sectioning.sections[si];
                 if (section.is_pruned) continue;
 
-                // Collect texts and images for this section from part_ids
-                const texts: RenderSectionText[] = [];
-                const images: RenderSectionImage[] = [];
-                for (const partId of section.part_ids) {
-                  const groupTexts = textLookup.get(partId);
-                  if (groupTexts) {
-                    texts.push(...groupTexts);
-                  }
-                  const imgBase64 = imageMap.get(partId);
-                  if (imgBase64) {
-                    images.push({ image_id: partId, image_base64: imgBase64 });
-                  }
-                }
+                const { texts, images } = collectSectionInputs({
+                  section,
+                  sectioning,
+                  imageMap,
+                  pageId: p.pageId,
+                });
 
                 if (texts.length === 0 && images.length === 0) continue;
 

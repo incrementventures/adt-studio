@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   ImageEntry,
@@ -42,6 +42,15 @@ export function ImageClassificationPanel({
   const [error, setError] = useState<string | null>(null);
   const [cropImageId, setCropImageId] = useState<string | null>(null);
   const [pendingCrops, setPendingCrops] = useState<Set<string>>(new Set());
+
+  // Sync from server props when the pipeline produces new data
+  useEffect(() => {
+    if (isDirty) return;
+    setData(initialClassification);
+    setVersions(initialAvailableVersions);
+    setImageHashes(initialImageHashes);
+    currentVersionRef.current = initialVersion;
+  }, [initialClassification, initialVersion, initialAvailableVersions, initialImageHashes]);
 
   const apiBase = `/api/books/${label}/pages/${pageId}/image-classification`;
 

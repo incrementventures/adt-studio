@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PageTextClassification } from "@/lib/books";
 import { TextTypeBadge } from "./text-type-badge";
+import { EditableText } from "./editable-text";
+import { TypeDropdown } from "./type-dropdown";
 import { usePipelineBusy } from "../use-pipeline-refresh";
 import { NodeHeader, type VersionApi } from "../node-header";
 
@@ -34,6 +36,14 @@ export function TextClassificationPanel({
   const pipelineBusy = usePipelineBusy(pageId, "text-classification");
   const [rerunError, setRerunError] = useState<string | null>(null);
   const currentVersionRef = useRef(initialVersion);
+
+  // Sync from server props when the pipeline produces new data
+  useEffect(() => {
+    if (isDirty) return;
+    setData(initialData);
+    setVersions(initialAvailableVersions);
+    currentVersionRef.current = initialVersion;
+  }, [initialData, initialVersion, initialAvailableVersions]);
 
   const apiBase = `/api/books/${label}/pages/${pageId}/text-classification`;
 
@@ -161,9 +171,9 @@ export function TextClassificationPanel({
           )}
           {data.groups.map((group, gi) => (
             <div key={gi} className="rounded-lg border border-border p-3">
-              <GroupTypeLabel
+              <TypeDropdown
                 currentType={group.group_type}
-                groupTypes={groupTypes}
+                types={groupTypes}
                 onSelect={(newType) => {
                   applyEdit((d) => {
                     d.groups[gi].group_type = newType;
@@ -235,155 +245,5 @@ export function TextClassificationPanel({
         </div>
       )}
     </div>
-  );
-}
-
-/* ── GroupTypeLabel ──────────────────────────────────────────────── */
-
-function GroupTypeLabel({
-  currentType,
-  groupTypes,
-  onSelect,
-}: {
-  currentType: string;
-  groupTypes: string[];
-  onSelect: (newType: string) => void;
-}) {
-  const [type, setType] = useState(currentType);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setType(currentType);
-  }, [currentType]);
-
-  const close = useCallback(() => setOpen(false), []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        close();
-      }
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open, close]);
-
-  function handleSelect(newType: string) {
-    if (newType === type) {
-      close();
-      return;
-    }
-    setType(newType);
-    close();
-    onSelect(newType);
-  }
-
-  return (
-    <div ref={containerRef} className="relative mb-1.5">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="cursor-pointer text-xs font-medium uppercase tracking-wider text-faint hover:text-foreground"
-      >
-        {type}
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-          {groupTypes.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => handleSelect(t)}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-surface ${t === type ? "font-semibold" : ""}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── EditableText ───────────────────────────────────────────────── */
-
-function EditableText({
-  text,
-  onSave,
-}: {
-  text: string;
-  onSave: (newText: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(text);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Sync if parent data updates
-  useEffect(() => {
-    if (!editing) setValue(text);
-  }, [text, editing]);
-
-  useEffect(() => {
-    if (editing && textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.select();
-    }
-  }, [editing]);
-
-  function save() {
-    setEditing(false);
-    if (value === text) return;
-    onSave(value);
-  }
-
-  function cancel() {
-    setValue(text);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            cancel();
-          }
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            save();
-          }
-        }}
-        className="flex-1 resize-none rounded border border-border bg-surface p-1 font-mono text-xs whitespace-pre-wrap focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        rows={Math.max(1, value.split("\n").length)}
-      />
-    );
-  }
-
-  return (
-    <span
-      onClick={() => setEditing(true)}
-      className="min-w-0 flex-1 cursor-pointer rounded px-1 py-0.5 font-mono text-xs whitespace-pre-wrap hover:bg-surface"
-    >
-      {value}
-    </span>
   );
 }

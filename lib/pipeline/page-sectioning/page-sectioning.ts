@@ -15,7 +15,7 @@ import { pagesNode } from "../extract/extract";
 import { textClassificationNode } from "../text-classification/text-classification";
 import { imageClassificationNode } from "../image-classification/image-classification";
 import { loadUnprunedImagesFromDir, countPages } from "../../books";
-import { buildUnprunedGroupSummaries, type PageTextClassification } from "../text-classification/text-classification-schema";
+import { buildUnprunedGroupSummaries, buildGroupsRecord, type PageTextClassification } from "../text-classification/text-classification-schema";
 import { sectionPage } from "./section-page";
 
 export { sectionPage } from "./section-page";
@@ -126,6 +126,16 @@ export const sectionsNode: Node<PageSectioning[]> = defineNode<
               const prunedSet = new Set(prunedSectionTypes);
               for (const s of sectioning.sections) {
                 s.is_pruned = prunedSet.has(s.section_type);
+              }
+
+              // Embed all text groups from extraction
+              sectioning.groups = buildGroupsRecord(extraction, p.pageId);
+
+              // Embed image assignments
+              const assignedPartIds = new Set(sectioning.sections.flatMap((s) => s.part_ids));
+              sectioning.images = {};
+              for (const img of images) {
+                sectioning.images[img.image_id] = { is_pruned: !assignedPartIds.has(img.image_id) };
               }
 
               // Record which classification versions were used (always 1 for fresh pipeline runs)

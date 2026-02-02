@@ -52,6 +52,30 @@ export type PageTextClassification = Omit<z.infer<typeof pageTextClassificationS
 };
 
 /**
+ * Build a Record of all groups with full text data for embedding in
+ * downstream node_data (e.g. page-sectioning).
+ */
+export function buildGroupsRecord(
+  extraction: PageTextClassification,
+  pageId: string
+): Record<string, { group_type: string; texts: { text_type: string; text: string; is_pruned: boolean }[] }> {
+  const record: Record<string, { group_type: string; texts: { text_type: string; text: string; is_pruned: boolean }[] }> = {};
+  for (const [idx, g] of extraction.groups.entries()) {
+    const groupId =
+      g.group_id ?? pageId + "_gp" + String(idx + 1).padStart(3, "0");
+    record[groupId] = {
+      group_type: g.group_type,
+      texts: g.texts.map((t) => ({
+        text_type: t.text_type,
+        text: t.text,
+        is_pruned: t.is_pruned,
+      })),
+    };
+  }
+  return record;
+}
+
+/**
  * Build group summaries for downstream consumers (e.g. page sectioning),
  * filtering out pruned text entries and dropping groups that become empty.
  */
