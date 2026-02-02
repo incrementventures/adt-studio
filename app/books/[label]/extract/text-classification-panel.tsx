@@ -170,7 +170,7 @@ export function TextClassificationPanel({
             </p>
           )}
           {data.groups.map((group, gi) => (
-            <div key={gi} className="rounded-lg border border-border p-3">
+            <div key={gi} className="rounded border border-border p-3">
               <TypeDropdown
                 currentType={group.group_type}
                 types={groupTypes}
@@ -180,12 +180,36 @@ export function TextClassificationPanel({
                   });
                 }}
               />
-              <div className="space-y-1.5">
+              <div className="ml-5 space-y-1.5">
                 {group.texts.map((entry, ti) => (
                   <div
                     key={ti}
                     className={`group/entry flex items-start gap-1.5${entry.is_pruned ? " opacity-40 line-through" : ""}`}
                   >
+                    <EditableText
+                      text={entry.text}
+                      onSave={(newText) => {
+                        applyEdit((d) => {
+                          d.groups[gi].texts[ti].text = newText;
+                        });
+                      }}
+                    />
+                    <div className="shrink-0">
+                      <TextTypeBadge
+                        label={label}
+                        pageId={pageId}
+                        groupIndex={gi}
+                        textIndex={ti}
+                        currentType={entry.text_type}
+                        textTypes={textTypes}
+                        onTypeChange={(newType) => {
+                          applyEdit((d) => {
+                            d.groups[gi].texts[ti].text_type = newType;
+                          });
+                          return Promise.resolve(true);
+                        }}
+                      />
+                    </div>
                     <button
                       type="button"
                       title={
@@ -213,30 +237,6 @@ export function TextClassificationPanel({
                         />
                       </svg>
                     </button>
-                    <EditableText
-                      text={entry.text}
-                      onSave={(newText) => {
-                        applyEdit((d) => {
-                          d.groups[gi].texts[ti].text = newText;
-                        });
-                      }}
-                    />
-                    <div className="shrink-0">
-                      <TextTypeBadge
-                        label={label}
-                        pageId={pageId}
-                        groupIndex={gi}
-                        textIndex={ti}
-                        currentType={entry.text_type}
-                        textTypes={textTypes}
-                        onTypeChange={(newType) => {
-                          applyEdit((d) => {
-                            d.groups[gi].texts[ti].text_type = newType;
-                          });
-                          return Promise.resolve(true);
-                        }}
-                      />
-                    </div>
                   </div>
                 ))}
               </div>

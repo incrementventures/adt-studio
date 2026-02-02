@@ -10,6 +10,16 @@ import { LightboxImage } from "../extract/image-lightbox";
 import { usePipelineBusy } from "../use-pipeline-refresh";
 import { NodeHeader, type VersionApi } from "../node-header";
 
+/** Line-with-dot drop indicator (Notion / Linear style). */
+function DropIndicator() {
+  return (
+    <div className="flex items-center gap-0 py-0.5">
+      <div className="h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
+      <div className="h-0.5 flex-1 bg-indigo-400 rounded-full" />
+    </div>
+  );
+}
+
 interface TextEntry {
   text_type: string;
   text: string;
@@ -260,19 +270,18 @@ export function SectionsPanel({
       };
     }
 
-    function partDropIndicator(pi: number) {
-      if (!canDragParts) return "";
-      return partDragOver?.sectionIndex === sectionIndex && partDragOver.index === pi
-        ? " border-t-2 border-indigo-400"
-        : " border-t-2 border-transparent";
+    function isPartDropTarget(pi: number) {
+      return canDragParts && partDragOver?.sectionIndex === sectionIndex && partDragOver.index === pi;
     }
 
-    return partIds.map((partId, pi) => {
+    const items = partIds.map((partId, pi) => {
       const group = resolveGroup(partId);
       if (group) {
         const groupPruned = sectioning?.groups?.[partId]?.is_pruned ?? false;
         return (
-          <div key={partId} className={`group/group flex items-start gap-1.5${partDropIndicator(pi)}`} {...partDragHandlers(pi)}>
+          <div key={partId}>
+            {isPartDropTarget(pi) && <DropIndicator />}
+            <div className="group/group flex items-start gap-1.5" {...partDragHandlers(pi)}>
             {canDragParts && (
               <div className="mt-3 flex shrink-0 cursor-grab items-center active:cursor-grabbing opacity-0 group-hover/group:opacity-100">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-faint">
@@ -280,37 +289,8 @@ export function SectionsPanel({
                 </svg>
               </div>
             )}
-            <button
-              type="button"
-              title={
-                groupPruned
-                  ? "Pruned — click to unprune group"
-                  : "Click to prune group"
-              }
-              onClick={() =>
-                applyEdit((d) => {
-                  if (d.groups?.[partId]) {
-                    d.groups[partId].is_pruned = !groupPruned;
-                  }
-                })
-              }
-              className={`mt-3 shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${groupPruned ? "" : " opacity-0 group-hover/group:opacity-100"}`}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="h-3.5 w-3.5"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M5.965 4.904l9.131 9.131a6.5 6.5 0 00-9.131-9.131zm8.07 10.192L4.904 5.965a6.5 6.5 0 009.131 9.131zM4.343 4.343a8 8 0 1111.314 11.314A8 8 0 014.343 4.343z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
             <div className={`min-w-0 flex-1 rounded border border-border bg-background p-3${groupPruned ? " opacity-40" : ""}`}>
-              <div className="mb-1.5 flex items-center justify-between">
+              <div className="group/group-header mb-1.5 flex items-center justify-between">
                 <TypeDropdown
                   currentType={group.group_type}
                   types={groupTypes}
@@ -322,63 +302,123 @@ export function SectionsPanel({
                     });
                   }}
                 />
-                <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
-                  {partId}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint">
+                    {partId}
+                  </span>
+                  <button
+                    type="button"
+                    title={
+                      groupPruned
+                        ? "Pruned — click to unprune group"
+                        : "Click to prune group"
+                    }
+                    onClick={() =>
+                      applyEdit((d) => {
+                        if (d.groups?.[partId]) {
+                          d.groups[partId].is_pruned = !groupPruned;
+                        }
+                      })
+                    }
+                    className={`shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${groupPruned ? "" : " opacity-0 group-hover/group-header:opacity-100"}`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.965 4.904l9.131 9.131a6.5 6.5 0 00-9.131-9.131zm8.07 10.192L4.904 5.965a6.5 6.5 0 009.131 9.131zM4.343 4.343a8 8 0 1111.314 11.314A8 8 0 014.343 4.343z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div className="space-y-0">
                 {group.texts.map((entry, ti) => (
-                  <div
-                    key={ti}
-                    draggable
-                    onDragStart={(e) => {
-                      e.stopPropagation();
-                      textDragRef.current = { partId, fromIndex: ti };
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onDragOver={(e) => {
-                      if (textDragRef.current?.partId !== partId) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.dataTransfer.dropEffect = "move";
-                      setTextDragOver({ partId, index: ti });
-                    }}
-                    onDragLeave={() => {
-                      setTextDragOver((prev) =>
-                        prev?.partId === partId && prev.index === ti ? null : prev
-                      );
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const src = textDragRef.current;
-                      if (!src || src.partId !== partId || src.fromIndex === ti) {
+                  <div key={ti}>
+                    {textDragOver?.partId === partId && textDragOver.index === ti && <DropIndicator />}
+                    <div
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        textDragRef.current = { partId, fromIndex: ti };
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragOver={(e) => {
+                        if (textDragRef.current?.partId !== partId) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = "move";
+                        setTextDragOver({ partId, index: ti });
+                      }}
+                      onDragLeave={() => {
+                        setTextDragOver((prev) =>
+                          prev?.partId === partId && prev.index === ti ? null : prev
+                        );
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const src = textDragRef.current;
+                        if (!src || src.partId !== partId || src.fromIndex === ti) {
+                          textDragRef.current = null;
+                          setTextDragOver(null);
+                          return;
+                        }
+                        applyEdit((d) => {
+                          if (d.groups?.[partId]) {
+                            const arr = d.groups[partId].texts;
+                            const [item] = arr.splice(src.fromIndex, 1);
+                            arr.splice(ti, 0, item);
+                          }
+                        });
                         textDragRef.current = null;
                         setTextDragOver(null);
-                        return;
-                      }
-                      applyEdit((d) => {
-                        if (d.groups?.[partId]) {
-                          const arr = d.groups[partId].texts;
-                          const [item] = arr.splice(src.fromIndex, 1);
-                          arr.splice(ti, 0, item);
-                        }
-                      });
-                      textDragRef.current = null;
-                      setTextDragOver(null);
-                    }}
-                    onDragEnd={() => {
-                      textDragRef.current = null;
-                      setTextDragOver(null);
-                    }}
-                    className={`group/entry flex items-start gap-1.5 py-0.5${entry.is_pruned ? " opacity-40 line-through" : ""}${textDragOver?.partId === partId && textDragOver.index === ti ? " border-t-2 border-indigo-400" : " border-t-2 border-transparent"}`}
-                  >
+                      }}
+                      onDragEnd={() => {
+                        textDragRef.current = null;
+                        setTextDragOver(null);
+                      }}
+                      className={`group/entry flex items-start gap-1.5 py-0.5${entry.is_pruned ? " opacity-40 line-through" : ""}`}
+                    >
                     <div
                       className={`mt-0.5 flex shrink-0 cursor-grab items-center gap-0.5 active:cursor-grabbing ${entry.is_pruned ? "" : "opacity-0 group-hover/entry:opacity-100"}`}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-faint">
                         <path fillRule="evenodd" d="M2 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z" clipRule="evenodd" />
                       </svg>
+                    </div>
+                    <EditableText
+                      text={entry.text}
+                      onSave={(newText) => {
+                        applyEdit((d) => {
+                          if (d.groups?.[partId]) {
+                            d.groups[partId].texts[ti].text = newText;
+                          }
+                        });
+                      }}
+                    />
+                    <div className="shrink-0">
+                      <TextTypeBadge
+                        label={label}
+                        pageId={pageId}
+                        groupIndex={0}
+                        textIndex={ti}
+                        currentType={entry.text_type}
+                        textTypes={textTypes}
+                        onTypeChange={(newType) => {
+                          applyEdit((d) => {
+                            if (d.groups?.[partId]) {
+                              d.groups[partId].texts[ti].text_type = newType;
+                            }
+                          });
+                          return Promise.resolve(true);
+                        }}
+                      />
                     </div>
                     <button
                       type="button"
@@ -409,37 +449,50 @@ export function SectionsPanel({
                         />
                       </svg>
                     </button>
-                    <EditableText
-                      text={entry.text}
-                      onSave={(newText) => {
-                        applyEdit((d) => {
-                          if (d.groups?.[partId]) {
-                            d.groups[partId].texts[ti].text = newText;
-                          }
-                        });
-                      }}
-                    />
-                    <div className="shrink-0">
-                      <TextTypeBadge
-                        label={label}
-                        pageId={pageId}
-                        groupIndex={0}
-                        textIndex={ti}
-                        currentType={entry.text_type}
-                        textTypes={textTypes}
-                        onTypeChange={(newType) => {
-                          applyEdit((d) => {
-                            if (d.groups?.[partId]) {
-                              d.groups[partId].texts[ti].text_type = newType;
-                            }
-                          });
-                          return Promise.resolve(true);
-                        }}
-                      />
                     </div>
                   </div>
                 ))}
+                {group.texts.length > 0 && (
+                  <div
+                    onDragOver={(e) => {
+                      if (textDragRef.current?.partId !== partId) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "move";
+                      setTextDragOver({ partId, index: group.texts.length });
+                    }}
+                    onDragLeave={() => {
+                      setTextDragOver((prev) =>
+                        prev?.partId === partId && prev.index === group.texts.length ? null : prev
+                      );
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const src = textDragRef.current;
+                      const endIdx = group.texts.length;
+                      if (!src || src.partId !== partId || src.fromIndex === endIdx) {
+                        textDragRef.current = null;
+                        setTextDragOver(null);
+                        return;
+                      }
+                      applyEdit((d) => {
+                        if (d.groups?.[partId]) {
+                          const arr = d.groups[partId].texts;
+                          const [item] = arr.splice(src.fromIndex, 1);
+                          arr.splice(endIdx, 0, item);
+                        }
+                      });
+                      textDragRef.current = null;
+                      setTextDragOver(null);
+                    }}
+                    className="h-3"
+                  >
+                    {textDragOver?.partId === partId && textDragOver.index === group.texts.length && <DropIndicator />}
+                  </div>
+                )}
               </div>
+            </div>
             </div>
           </div>
         );
@@ -447,7 +500,9 @@ export function SectionsPanel({
       // Image part
       const imgPruned = sectioning?.images?.[partId]?.is_pruned ?? false;
       return (
-        <div key={partId} className={`group/img flex items-start gap-1.5 pl-6${partDropIndicator(pi)}`} {...partDragHandlers(pi)}>
+        <div key={partId}>
+          {isPartDropTarget(pi) && <DropIndicator />}
+          <div className="group/img flex items-start gap-1.5" {...partDragHandlers(pi)}>
           {canDragParts && (
             <div className="mt-3 flex shrink-0 cursor-grab items-center active:cursor-grabbing opacity-0 group-hover/img:opacity-100">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-faint">
@@ -488,10 +543,53 @@ export function SectionsPanel({
                 />
               </svg>
             </button>
+            </div>
           </div>
         </div>
       );
     });
+
+    // Trailing drop zone so you can drop after the last item
+    if (canDragParts && partIds.length > 0) {
+      const endIdx = partIds.length;
+      items.push(
+        <div
+          key="__drop-end"
+          onDragOver={(e) => {
+            if (!partDragRef.current || partDragRef.current.sectionIndex !== sectionIndex!) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setPartDragOver({ sectionIndex: sectionIndex!, index: endIdx });
+          }}
+          onDragLeave={() => {
+            setPartDragOver((prev) =>
+              prev?.sectionIndex === sectionIndex! && prev.index === endIdx ? null : prev
+            );
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const src = partDragRef.current;
+            if (!src || src.sectionIndex !== sectionIndex! || src.fromIndex === endIdx) {
+              partDragRef.current = null;
+              setPartDragOver(null);
+              return;
+            }
+            applyEdit((d) => {
+              const arr = d.sections[sectionIndex!].part_ids;
+              const [item] = arr.splice(src.fromIndex, 1);
+              arr.splice(endIdx, 0, item);
+            });
+            partDragRef.current = null;
+            setPartDragOver(null);
+          }}
+          className="h-4"
+        >
+          {isPartDropTarget(endIdx) && <DropIndicator />}
+        </div>
+      );
+    }
+
+    return items;
   }
 
 
@@ -543,7 +641,7 @@ export function SectionsPanel({
                 className={`group/section rounded-lg border border-border bg-surface/30${section.is_pruned ? " opacity-40" : ""}`}
               >
                 {/* Section header */}
-                <div className="flex items-center gap-2 px-4 py-2.5">
+                <div className="group/section-header flex items-center gap-2 px-4 py-2.5">
                   <TypeDropdown
                     currentType={section.section_type}
                     types={sectionTypeKeys}
@@ -588,7 +686,7 @@ export function SectionsPanel({
                         d.sections[si].is_pruned = !section.is_pruned;
                       })
                     }
-                    className={`shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${section.is_pruned ? "" : " opacity-0 group-hover/section:opacity-100"}`}
+                    className={`shrink-0 cursor-pointer rounded p-0.5 text-faint hover:text-foreground transition-colors${section.is_pruned ? "" : " opacity-0 group-hover/section-header:opacity-100"}`}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
