@@ -9,7 +9,13 @@ interface JobInfo {
   status: string;
   progress?: string;
   params?: Record<string, unknown>;
+  startedAt?: number;
+  completedAt?: number;
+  /** Client-side timestamp when the finished event was received (for UI lingering) */
+  finishedAt?: number;
 }
+
+const LINGER_MS = 5000;
 
 interface QueueStats {
   queued: number;
@@ -36,13 +42,13 @@ export default function QueueStatus() {
     es.addEventListener("job", (e) => {
       try {
         const job = JSON.parse(e.data) as JobInfo;
+        // For finished jobs, stamp finishedAt so we can linger them in the UI
+        if (job.status === "completed" || job.status === "failed") {
+          job.finishedAt = Date.now();
+        }
         setJobs((prev) => {
           const next = new Map(prev);
-          if (job.status === "completed" || job.status === "failed") {
-            next.delete(job.id);
-          } else {
-            next.set(job.id, job);
-          }
+          next.set(job.id, job);
           return next;
         });
       } catch {
@@ -57,6 +63,13 @@ export default function QueueStatus() {
     return () => es.close();
   }, []);
 
+  // Tick every second so elapsed times stay current
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const active = stats.running + stats.queued;
 
   // Reset hover when transitioning from idle to active
@@ -68,10 +81,56 @@ export default function QueueStatus() {
     wasActive.current = active > 0;
   }, [active]);
 
-  if (active === 0) return null;
+  // When the dropdown closes, reset linger timers so completed jobs
+  // get a fresh LINGER_MS window before being pruned.
+  useEffect(() => {
+    if (!hovered) {
+      const closeTime = Date.now();
+      setJobs((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [id, job] of next) {
+          if (job.finishedAt && job.finishedAt < closeTime) {
+            next.set(id, { ...job, finishedAt: closeTime });
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [hovered]);
 
+  // Purge finished jobs that have lingered past LINGER_MS,
+  // but only when the dropdown is closed.
+  useEffect(() => {
+    if (hovered) return;
+    let anyExpired = false;
+    for (const job of jobs.values()) {
+      if (job.finishedAt && now - job.finishedAt >= LINGER_MS) {
+        anyExpired = true;
+        break;
+      }
+    }
+    if (anyExpired) {
+      setJobs((prev) => {
+        const next = new Map(prev);
+        for (const [id, job] of next) {
+          if (job.finishedAt && now - job.finishedAt >= LINGER_MS) {
+            next.delete(id);
+          }
+        }
+        return next;
+      });
+    }
+  }, [now, jobs, hovered]);
+
+  if (active === 0 && jobs.size === 0) return null;
+
+  const STATUS_ORDER: Record<string, number> = { running: 0, queued: 1, completed: 2, failed: 2 };
   const sortedJobs = [...jobs.values()].sort((a, b) => {
-    if (a.status !== b.status) return a.status === "running" ? -1 : 1;
+    const ao = STATUS_ORDER[a.status] ?? 1;
+    const bo = STATUS_ORDER[b.status] ?? 1;
+    if (ao !== bo) return ao - bo;
     return a.id.localeCompare(b.id);
   });
 
@@ -84,13 +143,22 @@ export default function QueueStatus() {
     >
       <div className="flex justify-end">
         <span className="inline-flex cursor-default items-center gap-1.5 rounded-full bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-slate-300 shadow-lg shadow-black/30">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-          </span>
-          {stats.running > 0 && <span>{stats.running} running</span>}
-          {stats.running > 0 && stats.queued > 0 && <span>&middot;</span>}
-          {stats.queued > 0 && <span>{stats.queued} queued</span>}
+          {active > 0 ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+              </span>
+              {stats.running > 0 && <span>{stats.running} running</span>}
+              {stats.running > 0 && stats.queued > 0 && <span>&middot;</span>}
+              {stats.queued > 0 && <span>{stats.queued} queued</span>}
+            </>
+          ) : (
+            <>
+              <span className="h-2 w-2 rounded-full bg-green-500" />
+              <span>{jobs.size} completed</span>
+            </>
+          )}
         </span>
       </div>
 
@@ -110,20 +178,25 @@ export default function QueueStatus() {
               >
                 <span
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    job.status === "running" ? "bg-green-500 animate-pulse" : "bg-yellow-500"
+                    job.status === "completed" ? "bg-green-500" :
+                    job.status === "failed" ? "bg-red-500" :
+                    job.status === "running" ? "bg-blue-500 animate-pulse" : "bg-yellow-500"
                   }`}
                 />
                 <span className="truncate text-xs font-medium text-slate-200">
                   {job.label}
                 </span>
-                <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-500">
-                  {formatJobType(job)}
-                </span>
                 {job.progress && (
-                  <span className="ml-auto shrink-0 text-[11px] text-slate-500">
+                  <span className="shrink-0 text-[11px] text-slate-500">
                     {job.progress}
                   </span>
                 )}
+                <span className="ml-auto shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-500">
+                  {formatJobType(job)}
+                </span>
+                <span className="w-10 shrink-0 text-right tabular-nums text-[11px] text-slate-600">
+                  {formatElapsed(job, now)}
+                </span>
               </div>
             ))}
             {remaining > 0 && (
@@ -136,6 +209,17 @@ export default function QueueStatus() {
       })()}
     </div>
   );
+}
+
+function formatElapsed(job: JobInfo, now: number): string {
+  const since = job.startedAt ?? 0;
+  if (!since) return "";
+  const end = job.completedAt ?? now;
+  const secs = Math.max(0, Math.floor((end - since) / 1000));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  return `${mins}m${String(rem).padStart(2, "0")}s`;
 }
 
 function formatJobType(job: JobInfo): string {
