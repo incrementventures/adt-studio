@@ -131,6 +131,10 @@ export interface NodeHeaderProps {
   isDirty?: boolean;
   /** Called when the user clicks Discard while isDirty. */
   onDirtyDiscard?: () => void;
+  /** Called when the user clicks Save while isDirty. When omitted, Save triggers versionApi.saveVersion. */
+  onDirtySave?: () => void;
+  /** Disable the Save button (e.g. when annotations aren't ready). */
+  saveDisabled?: boolean;
   /** Error message to display in the header. */
   error?: string | null;
   /** Optional extra content that replaces the entire right side (e.g. edit-mode buttons). */
@@ -151,6 +155,8 @@ export function NodeHeader({
   rerunTitle = "Rerun",
   isDirty,
   onDirtyDiscard,
+  onDirtySave,
+  saveDisabled,
   error,
   children,
 }: NodeHeaderProps) {
@@ -244,7 +250,7 @@ export function NodeHeader({
 
   const showSaveDiscard = isDirty || isOldVersion;
   const isSaving = savingVersion;
-  const handleSaveClick = handleSave;
+  const handleSaveClick = isDirty && onDirtySave ? onDirtySave : handleSave;
   const handleDiscardClick = isDirty ? onDirtyDiscard : handleDiscard;
 
   return (
@@ -258,25 +264,25 @@ export function NodeHeader({
       {children ?? (
         <div className="ml-auto flex items-center gap-1.5">
           {showSaveDiscard && (
-            <>
-              <button
-                type="button"
-                onClick={handleDiscardClick}
-                disabled={isSaving}
-                className={`inline-flex items-center cursor-pointer rounded px-2 h-6 text-xs font-medium text-white disabled:opacity-50 transition-colors ${c.btnBg} ${c.btnHover}`}
-              >
-                Discard
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveClick}
-                disabled={isSaving}
-                className={`inline-flex cursor-pointer items-center rounded bg-white px-2 h-6 text-xs font-semibold hover:bg-slate-50 disabled:opacity-70 transition-colors ${c.saveText}`}
-              >
-                Save
-              </button>
-            </>
-          )}
+          <>
+            <button
+              type="button"
+              onClick={handleDiscardClick}
+              disabled={isSaving}
+              className={`inline-flex items-center cursor-pointer rounded px-2 h-6 text-xs font-medium text-white disabled:opacity-50 transition-colors ${c.btnBg} ${c.btnHover}`}
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={isSaving || saveDisabled}
+              className={`inline-flex cursor-pointer items-center rounded bg-white px-2 h-6 text-xs font-semibold hover:bg-slate-50 disabled:opacity-70 transition-colors ${c.saveText}`}
+            >
+              Save
+            </button>
+          </>
+        )}
           <div ref={dropdownRef} className="relative">
             <button
               type="button"

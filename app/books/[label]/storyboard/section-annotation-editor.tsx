@@ -70,47 +70,66 @@ export const SectionAnnotationEditor = forwardRef<
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, containerWidth, containerHeight);
 
     // Draw completed annotations
     for (const ann of annotations) {
-      ctx.fillStyle = "rgba(59, 130, 246, 0.15)";
-      ctx.fillRect(ann.x, ann.y, ann.width, ann.height);
-      ctx.strokeStyle = "rgba(59, 130, 246, 0.8)";
+      // Solid red border, no fill
+      ctx.strokeStyle = "#ef4444";
       ctx.lineWidth = 2;
       ctx.strokeRect(ann.x, ann.y, ann.width, ann.height);
 
       // Number label
       const idx = annotations.indexOf(ann) + 1;
-      ctx.fillStyle = "rgba(59, 130, 246, 0.9)";
+      ctx.fillStyle = "#ef4444";
       ctx.fillRect(ann.x, ann.y, 24, 20);
       ctx.fillStyle = "#fff";
       ctx.font = "bold 12px sans-serif";
       ctx.fillText(String(idx), ann.x + 7, ann.y + 14);
 
-      // Text label — wrap inside the annotation box
-      if (ann.text) {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      // Text label — rendered below the box, only after text is confirmed
+      if (ann.text && editingId !== ann.id) {
         ctx.font = "11px sans-serif";
-        const textX = ann.x + 4;
-        const textY = ann.y + 28;
-        const maxW = ann.width - 8;
+        const padX = 4;
+        const padY = 3;
         const lineH = 14;
+        const maxW = Math.max(ann.width - padX * 2, 200);
         const words = ann.text.split(" ");
+
+        // First pass: compute wrapped lines
+        const lines: string[] = [];
         let line = "";
-        let dy = 0;
         for (const word of words) {
           const test = line ? `${line} ${word}` : word;
           if (ctx.measureText(test).width > maxW && line) {
-            ctx.fillText(line, textX, textY + dy);
+            lines.push(line);
             line = word;
-            dy += lineH;
           } else {
             line = test;
           }
         }
-        if (line) {
-          ctx.fillText(line, textX, textY + dy);
+        if (line) lines.push(line);
+
+        // Compute block width (widest line + padding) and height
+        let blockW = 0;
+        for (const l of lines) {
+          blockW = Math.max(blockW, ctx.measureText(l).width);
+        }
+        blockW += padX * 2;
+        const blockH = lines.length * lineH + padY * 2;
+
+        // Draw red background flush with box bottom border
+        const blockX = ann.x - 1;
+        const blockY = ann.y + ann.height;
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(blockX, blockY, blockW, blockH);
+
+        // Draw white text
+        ctx.fillStyle = "#fff";
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], blockX + padX, blockY + padY + 11 + i * lineH);
         }
       }
     }
@@ -121,15 +140,13 @@ export const SectionAnnotationEditor = forwardRef<
       const y = Math.min(startPos.y, currentPos.y);
       const w = Math.abs(currentPos.x - startPos.x);
       const h = Math.abs(currentPos.y - startPos.y);
-      ctx.fillStyle = "rgba(59, 130, 246, 0.1)";
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = "rgba(59, 130, 246, 0.6)";
+      ctx.strokeStyle = "#ef4444";
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 3]);
       ctx.strokeRect(x, y, w, h);
       ctx.setLineDash([]);
     }
-  }, [annotations, drawing, startPos, currentPos]);
+  }, [annotations, drawing, startPos, currentPos, editingId]);
 
   useEffect(() => {
     drawCanvas();
@@ -139,9 +156,17 @@ export const SectionAnnotationEditor = forwardRef<
     const canvas = canvasRef.current;
     if (!canvas || annotations.length === 0 || editingId !== null) return;
 
-    drawCanvas();
+    // Render a 1x image for submission (the on-screen canvas is at dpr scale)
+    const offscreen = document.createElement("canvas");
+    offscreen.width = containerWidth;
+    offscreen.height = containerHeight;
+    const offCtx = offscreen.getContext("2d");
+    if (offCtx) {
+      offCtx.setTransform(1, 0, 0, 1, 0, 0);
+      offCtx.drawImage(canvas, 0, 0, containerWidth, containerHeight);
+    }
 
-    const dataUrl = canvas.toDataURL("image/png");
+    const dataUrl = offscreen.toDataURL("image/png");
     const base64 = dataUrl.split(",")[1];
 
     const normalized: Annotation[] = annotations.map((a) => ({
@@ -251,9 +276,10 @@ export const SectionAnnotationEditor = forwardRef<
     <div className="absolute inset-0" style={{ zIndex: 10 }}>
       <canvas
         ref={canvasRef}
-        width={containerWidth}
-        height={containerHeight}
+        width={containerWidth * (typeof window !== "undefined" ? window.devicePixelRatio : 1)}
+        height={containerHeight * (typeof window !== "undefined" ? window.devicePixelRatio : 1)}
         className="absolute inset-0 cursor-crosshair"
+        style={{ width: containerWidth, height: containerHeight }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -278,7 +304,7 @@ export const SectionAnnotationEditor = forwardRef<
               onChange={(e) => handleTextChange(ann.id, e.target.value)}
               onKeyDown={(e) => handleTextKeyDown(e, ann.id)}
               placeholder="Type instruction, Enter to confirm"
-              className="resize-none rounded border border-blue-400 bg-white px-2 py-1 text-xs shadow-lg outline-none focus:ring-2 focus:ring-blue-500"
+              className="resize-none rounded border border-red-400 bg-white px-2 py-1 text-xs shadow-lg outline-none focus:ring-2 focus:ring-red-500"
               style={{ width: Math.max(ann.width, 220) }}
             />
           </div>

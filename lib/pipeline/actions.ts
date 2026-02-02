@@ -105,7 +105,14 @@ export async function runWebRendering(
   const sectionRenderings: SectionRendering[] = [];
   for (let si = 0; si < sectioning.sections.length; si++) {
     const section = sectioning.sections[si];
-    if (section.is_pruned) continue;
+    const sectionId = `${pageId}_s${String(si).padStart(3, "0")}`;
+
+    if (section.is_pruned) {
+      const existingVersions = listWebRenderingVersions(label, sectionId);
+      const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+      putNodeData(label, "web-rendering", sectionId, nextVersion, null);
+      continue;
+    }
 
     const { texts, images } = collectSectionInputs({
       section,
@@ -114,7 +121,12 @@ export async function runWebRendering(
       pageId,
     });
 
-    if (texts.length === 0 && images.length === 0) continue;
+    if (texts.length === 0 && images.length === 0) {
+      const existingVersions = listWebRenderingVersions(label, sectionId);
+      const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+      putNodeData(label, "web-rendering", sectionId, nextVersion, null);
+      continue;
+    }
 
     onProgress?.(`Rendering section ${si + 1}/${sectioning.sections.length}`);
 
@@ -134,25 +146,9 @@ export async function runWebRendering(
 
     sectionRenderings.push(rendering);
 
-    const sectionId = `${pageId}_s${String(si).padStart(3, "0")}`;
     const existingVersions = listWebRenderingVersions(label, sectionId);
     const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
     putNodeData(label, "web-rendering", sectionId, nextVersion, rendering);
-  }
-
-  // Stub if all sections pruned/empty
-  if (sectionRenderings.length === 0) {
-    const stub: SectionRendering = {
-      section_index: 0,
-      section_type: "empty",
-      html: "",
-      reasoning: "All sections on this page are pruned — nothing to render.",
-    };
-    sectionRenderings.push(stub);
-    const stubId = `${pageId}_s000`;
-    const stubVersions = listWebRenderingVersions(label, stubId);
-    const stubNextVersion = stubVersions.length > 0 ? Math.max(...stubVersions) + 1 : 1;
-    putNodeData(label, "web-rendering", stubId, stubNextVersion, stub);
   }
 
   return {

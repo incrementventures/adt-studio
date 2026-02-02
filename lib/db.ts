@@ -1,7 +1,7 @@
 import path from "node:path";
 import Database from "better-sqlite3";
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export class SchemaMismatchError extends Error {
   constructor(
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS node_data (
   node TEXT NOT NULL,
   item_id TEXT NOT NULL,
   version INTEGER NOT NULL,
-  data TEXT NOT NULL,
+  data TEXT,
   PRIMARY KEY (node, item_id, version)
 );
 

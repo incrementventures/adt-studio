@@ -102,6 +102,7 @@ class JobQueue {
           this.updateJob(job, { status: "completed", completedAt: Date.now() });
         }
       } catch (err) {
+        console.error(`[queue] Job ${job.id} (${job.type} ${job.label}) failed:`, err);
         this.updateJob(job, {
           status: "failed",
           error: err instanceof Error ? err.message : "Unknown error",

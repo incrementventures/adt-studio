@@ -61,7 +61,7 @@ function getVersionData<T>(
       "SELECT data FROM node_data WHERE node = ? AND item_id = ? AND version = ?"
     )
     .get(node, itemId, version) as { data: string } | undefined;
-  if (!row) return null;
+  if (!row || row.data == null) return null;
   return JSON.parse(row.data) as T;
 }
 
@@ -207,7 +207,7 @@ export function putNodeData(
     `INSERT INTO node_data (node, item_id, version, data)
      VALUES (?, ?, ?, ?)
      ON CONFLICT (node, item_id, version) DO UPDATE SET data = excluded.data`
-  ).run(node, itemId, version, JSON.stringify(data));
+  ).run(node, itemId, version, data != null ? JSON.stringify(data) : null);
 }
 
 export function resetNodeVersions(
@@ -607,7 +607,7 @@ export function getWebRendering(
     sections.push({ ...data, version: latest, versions });
   }
 
-  return sections.length > 0 ? { sections } : null;
+  return { sections };
 }
 
 // ---------------------------------------------------------------------------

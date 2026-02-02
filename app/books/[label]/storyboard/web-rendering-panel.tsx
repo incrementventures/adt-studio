@@ -119,6 +119,7 @@ function SandboxedSection({
 
 function SectionCard({
   section,
+  sectionNumber,
   label,
   pageId,
   isEditing,
@@ -135,6 +136,7 @@ function SectionCard({
   onSectionUpdated,
 }: {
   section: SectionRendering;
+  sectionNumber: number;
   label: string;
   pageId: string;
   isEditing: boolean;
@@ -184,20 +186,10 @@ function SectionCard({
     },
   }), [label, pageId, sectionId]);
 
-  if (!section.html) {
-    return (
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="px-4 py-2 bg-surface/30">
-          <p className="text-xs italic text-muted">{section.reasoning || "Empty section"}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       <NodeHeader
-        title={section.section_type.replace(/_/g, " ")}
+        title={`Section ${sectionNumber}`}
         initialVersion={initialVersion}
         initialVersions={initialVersions}
         versionApi={versionApi}
@@ -210,32 +202,15 @@ function SectionCard({
           setDisplayedHtml(json.section.html);
           onSectionUpdated(json.section, newVersion, newVersions);
         }}
-        rerunLoading={rerunLoading}
+        rerunLoading={rerunLoading || editLoading}
         rerunDisabled={editLoading}
         onRerun={onRerun}
         rerunTitle="Rerun section"
-      >
-        {isEditing ? (
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              disabled={editLoading}
-              className="cursor-pointer rounded px-2 py-0.5 text-xs font-medium text-white/80 hover:text-white disabled:opacity-50 transition-colors"
-            >
-              Discard
-            </button>
-            <button
-              type="button"
-              onClick={() => editorRef.current?.submit()}
-              disabled={editLoading || !canSubmitEdit}
-              className="cursor-pointer rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {editLoading ? "Saving..." : "Save"}
-            </button>
-          </div>
-        ) : undefined}
-      </NodeHeader>
+        isDirty={isEditing}
+        onDirtyDiscard={onCancelEdit}
+        onDirtySave={() => editorRef.current?.submit()}
+        saveDisabled={!canSubmitEdit || editLoading}
+      />
       <div
         ref={containerRef}
         className="group relative"
@@ -263,11 +238,7 @@ function SectionCard({
         {isEditing && (
           <>
             {editLoading && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40">
-                <div className="rounded bg-white px-4 py-2 text-sm font-medium shadow">
-                  Updating section...
-                </div>
-              </div>
+              <div className="absolute inset-0 z-30 bg-black/40" />
             )}
             <SectionAnnotationEditor
               ref={editorRef}
@@ -618,12 +589,17 @@ export function WebRenderingPanel({
             </div>
           </div>
         </div>
+      ) : sections.every((s) => !s.html) ? (
+        <p className="p-4 text-sm italic text-muted">
+          No sections found for this page to render.
+        </p>
       ) : (
         <div className="space-y-4 p-4">
-          {sections.map((section) => (
+          {sections.filter((s) => s.html).map((section, idx) => (
             <SectionCard
               key={section.section_index}
               section={section}
+              sectionNumber={idx + 1}
               label={label}
               pageId={pageId}
               isEditing={editingSection === section.section_index}
