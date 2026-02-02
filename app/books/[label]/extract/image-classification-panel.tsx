@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import type {
   ImageEntry,
   PageImageClassification,
 } from "@/lib/pipeline/image-classification/image-classification-schema";
 import { ImageCropDialog } from "./image-crop-dialog";
 import { NodeHeader, type VersionApi } from "../node-header";
+import { usePipelineBusy, usePanelJobBusy, usePanelJobError, useRerun } from "../use-pipeline-refresh";
 
 interface ImageClassificationPanelProps {
   label: string;
@@ -30,7 +30,6 @@ export function ImageClassificationPanel({
   availableVersions: initialAvailableVersions,
   initialImageHashes,
 }: ImageClassificationPanelProps) {
-  const router = useRouter();
   const [data, setData] = useState<PageImageClassification | null>(
     initialClassification
   );
@@ -38,10 +37,16 @@ export function ImageClassificationPanel({
   const [imageHashes, setImageHashes] = useState<Record<string, string>>(initialImageHashes);
   const currentVersionRef = useRef(initialVersion);
   const [isDirty, setIsDirty] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [cropImageId, setCropImageId] = useState<string | null>(null);
   const [pendingCrops, setPendingCrops] = useState<Set<string>>(new Set());
+
+  const pipelineBusy = usePipelineBusy(pageId, "image-classification");
+  const panelJobBusy = usePanelJobBusy(pageId, "image-classification");
+  const { error: jobError } = usePanelJobError(pageId, "image-classification");
+  const apiBase = `/api/books/${label}/pages/${pageId}/image-classification`;
+  const { rerun: handleRerun, error: rerunError } = useRerun(apiBase);
+  const busy = pipelineBusy || panelJobBusy;
+  const error = jobError || rerunError;
 
   // Sync from server props when the pipeline produces new data
   useEffect(() => {
@@ -51,8 +56,6 @@ export function ImageClassificationPanel({
     setImageHashes(initialImageHashes);
     currentVersionRef.current = initialVersion;
   }, [initialClassification, initialVersion, initialAvailableVersions, initialImageHashes]);
-
-  const apiBase = `/api/books/${label}/pages/${pageId}/image-classification`;
 
   const versionApi: VersionApi = useMemo(() => ({
     loadVersion: async (v: number) => {
@@ -70,52 +73,6 @@ export function ImageClassificationPanel({
       return res.json();
     },
   }), [apiBase, data]);
-
-  async function handleRerun() {
-    setRunning(true);
-    setError(null);
-    try {
-      const res = await fetch(apiBase, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Request failed (${res.status})`);
-      }
-      const { jobId } = await res.json();
-      if (!jobId) throw new Error("No job ID returned");
-
-      const es = new EventSource(`/api/queue?jobId=${jobId}`);
-      es.addEventListener("job", (e) => {
-        try {
-          const job = JSON.parse(e.data);
-          if (job.status === "completed") {
-            const { version: newVersion, versions: newVersions, imageHashes: newHashes, data: newData } = job.result as {
-              version: number; versions: number[]; imageHashes?: Record<string, string>; data: PageImageClassification;
-            };
-            setData(newData);
-            currentVersionRef.current = newVersion;
-            setVersions(newVersions ?? [newVersion]);
-            if (newHashes) setImageHashes(newHashes);
-            setIsDirty(false);
-            setRunning(false);
-            router.refresh();
-            es.close();
-          } else if (job.status === "failed") {
-            setError(job.error ?? "Classification failed");
-            setRunning(false);
-            es.close();
-          }
-        } catch { /* skip */ }
-      });
-      es.onerror = () => {
-        setError("Connection to job queue lost");
-        setRunning(false);
-        es.close();
-      };
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setRunning(false);
-    }
-  }
 
   function togglePruned(imageId: string) {
     setData((prev) => {
@@ -217,7 +174,7 @@ export function ImageClassificationPanel({
           setIsDirty(false);
           setPendingCrops(new Set());
         }}
-        rerunLoading={running}
+        rerunLoading={busy}
         rerunDisabled={isDirty}
         onRerun={handleRerun}
         rerunTitle={data ? "Rerun image classification" : "Run image classification"}

@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { PageSectioning } from "@/lib/books";
 import { TextTypeBadge } from "../extract/text-type-badge";
 import { EditableText } from "../extract/editable-text";
 import { TypeDropdown } from "../extract/type-dropdown";
 import { LightboxImage } from "../extract/image-lightbox";
-import { usePipelineBusy } from "../use-pipeline-refresh";
+import { usePipelineBusy, usePanelJobBusy, usePanelJobError, useRerun } from "../use-pipeline-refresh";
 import { NodeHeader, type VersionApi } from "../node-header";
 
 /** Line-with-dot drop indicator (Notion / Linear style). */
@@ -62,14 +61,18 @@ export function SectionsPanel({
   textTypes,
   groupTypes,
 }: SectionsPanelProps) {
-  const router = useRouter();
   const [sectioning, setSectioning] = useState(initialSectioning);
   const [versions, setVersions] = useState(initialAvailableVersions);
   const [isDirty, setIsDirty] = useState(false);
-  const [rerunning, setRerunning] = useState(false);
-  const [rerunError, setRerunError] = useState<string | null>(null);
   const pipelineBusy = usePipelineBusy(pageId, "sections");
+  const panelJobBusy = usePanelJobBusy(pageId, "page-sectioning");
+  const { error: jobError } = usePanelJobError(pageId, "page-sectioning");
   const currentVersionRef = useRef(initialVersion);
+
+  const apiBase = `/api/books/${label}/pages/${pageId}/page-sectioning`;
+  const { rerun: handleRerun, error: rerunError } = useRerun(apiBase);
+  const busy = pipelineBusy || panelJobBusy;
+  const error = jobError || rerunError;
   const textDragRef = useRef<{ partId: string; fromIndex: number } | null>(null);
   const [textDragOver, setTextDragOver] = useState<{ partId: string; index: number } | null>(null);
   const partDragRef = useRef<{ sectionIndex: number; fromIndex: number } | null>(null);
@@ -84,8 +87,6 @@ export function SectionsPanel({
     setVersions(initialAvailableVersions);
     currentVersionRef.current = initialVersion;
   }, [initialSectioning, initialVersion, initialAvailableVersions]);
-
-  const apiBase = `/api/books/${label}/pages/${pageId}/page-sectioning`;
 
   const sectionTypeKeys = Object.keys(sectionTypes);
 
@@ -105,51 +106,6 @@ export function SectionsPanel({
       return res.json();
     },
   }), [apiBase, sectioning]);
-
-  async function handleRerun() {
-    setRerunning(true);
-    setRerunError(null);
-    try {
-      const res = await fetch(apiBase, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Request failed (${res.status})`);
-      }
-      const { jobId } = await res.json();
-      if (!jobId) throw new Error("No job ID returned");
-
-      const es = new EventSource(`/api/queue?jobId=${jobId}`);
-      es.addEventListener("job", (e) => {
-        try {
-          const job = JSON.parse(e.data);
-          if (job.status === "completed") {
-            const { version: newVersion, versions: newVersions, data: newData } = job.result as {
-              version: number; versions: number[]; data: PageSectioning;
-            };
-            setSectioning(newData);
-            currentVersionRef.current = newVersion;
-            setVersions(newVersions);
-            setIsDirty(false);
-            setRerunning(false);
-            router.refresh();
-            es.close();
-          } else if (job.status === "failed") {
-            setRerunError(job.error ?? "Sectioning failed");
-            setRerunning(false);
-            es.close();
-          }
-        } catch { /* skip */ }
-      });
-      es.onerror = () => {
-        setRerunError("Connection to job queue lost");
-        setRerunning(false);
-        es.close();
-      };
-    } catch (err) {
-      setRerunError(err instanceof Error ? err.message : "Unknown error");
-      setRerunning(false);
-    }
-  }
 
   // Build a lookup from group_id -> group data (from extraction)
   const groupLookup = new Map<
@@ -621,13 +577,13 @@ export function SectionsPanel({
           setVersions(newVersions);
           setIsDirty(false);
         }}
-        rerunLoading={rerunning || pipelineBusy}
+        rerunLoading={busy}
         rerunDisabled={isDirty}
         onRerun={handleRerun}
         rerunTitle={sectioning ? "Rerun sectioning" : "Run sectioning"}
         isDirty={isDirty}
         onDirtyDiscard={discardEdits}
-        error={rerunError}
+        error={error}
       />
 
       {sectioning ? (

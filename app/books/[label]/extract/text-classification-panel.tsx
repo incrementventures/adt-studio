@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { PageTextClassification } from "@/lib/books";
 import { TextTypeBadge } from "./text-type-badge";
 import { EditableText } from "./editable-text";
 import { TypeDropdown } from "./type-dropdown";
-import { usePipelineBusy } from "../use-pipeline-refresh";
+import { usePipelineBusy, usePanelJobBusy, usePanelJobError, useRerun } from "../use-pipeline-refresh";
 import { NodeHeader, type VersionApi } from "../node-header";
 
 interface TextClassificationPanelProps {
@@ -28,14 +27,18 @@ export function TextClassificationPanel({
   textTypes,
   groupTypes,
 }: TextClassificationPanelProps) {
-  const router = useRouter();
   const [data, setData] = useState(initialData);
   const [versions, setVersions] = useState(initialAvailableVersions);
   const [isDirty, setIsDirty] = useState(false);
-  const [rerunning, setRerunning] = useState(false);
   const pipelineBusy = usePipelineBusy(pageId, "text-classification");
-  const [rerunError, setRerunError] = useState<string | null>(null);
+  const panelJobBusy = usePanelJobBusy(pageId, "text-classification");
+  const { error: jobError } = usePanelJobError(pageId, "text-classification");
   const currentVersionRef = useRef(initialVersion);
+
+  const apiBase = `/api/books/${label}/pages/${pageId}/text-classification`;
+  const { rerun: handleRerun, error: rerunError } = useRerun(apiBase);
+  const busy = pipelineBusy || panelJobBusy;
+  const error = jobError || rerunError;
 
   // Sync from server props when the pipeline produces new data
   useEffect(() => {
@@ -44,8 +47,6 @@ export function TextClassificationPanel({
     setVersions(initialAvailableVersions);
     currentVersionRef.current = initialVersion;
   }, [initialData, initialVersion, initialAvailableVersions]);
-
-  const apiBase = `/api/books/${label}/pages/${pageId}/text-classification`;
 
   const versionApi: VersionApi = useMemo(() => ({
     loadVersion: async (v: number) => {
@@ -63,51 +64,6 @@ export function TextClassificationPanel({
       return res.json();
     },
   }), [apiBase, data]);
-
-  async function handleRerun() {
-    setRerunning(true);
-    setRerunError(null);
-    try {
-      const res = await fetch(apiBase, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Request failed (${res.status})`);
-      }
-      const { jobId } = await res.json();
-      if (!jobId) throw new Error("No job ID returned");
-
-      const es = new EventSource(`/api/queue?jobId=${jobId}`);
-      es.addEventListener("job", (e) => {
-        try {
-          const job = JSON.parse(e.data);
-          if (job.status === "completed") {
-            const { version: newVersion, versions: newVersions, data: newData } = job.result as {
-              version: number; versions: number[]; data: PageTextClassification;
-            };
-            setData(newData);
-            currentVersionRef.current = newVersion;
-            setVersions(newVersions ?? [newVersion]);
-            setIsDirty(false);
-            setRerunning(false);
-            router.refresh();
-            es.close();
-          } else if (job.status === "failed") {
-            setRerunError(job.error ?? "Classification failed");
-            setRerunning(false);
-            es.close();
-          }
-        } catch { /* skip */ }
-      });
-      es.onerror = () => {
-        setRerunError("Connection to job queue lost");
-        setRerunning(false);
-        es.close();
-      };
-    } catch (err) {
-      setRerunError(err instanceof Error ? err.message : "Unknown error");
-      setRerunning(false);
-    }
-  }
 
   function applyEdit(mutator: (draft: PageTextClassification) => void) {
     setData((prev) => {
@@ -150,13 +106,13 @@ export function TextClassificationPanel({
           setVersions(newVersions);
           setIsDirty(false);
         }}
-        rerunLoading={rerunning || pipelineBusy}
+        rerunLoading={busy}
         rerunDisabled={isDirty}
         onRerun={handleRerun}
         rerunTitle={data ? "Rerun classification" : "Run classification"}
         isDirty={isDirty}
         onDirtyDiscard={discardEdits}
-        error={rerunError}
+        error={error}
       />
       {!data ? (
         <p className="p-4 text-sm italic text-muted">

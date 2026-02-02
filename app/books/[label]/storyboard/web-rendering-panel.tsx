@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import type { SectionRendering } from "@/lib/books";
 import type { Annotation } from "@/lib/pipeline/web-rendering/edit-section";
 import {
   SectionAnnotationEditor,
   type SectionAnnotationEditorHandle,
 } from "./section-annotation-editor";
-import { usePipelineBusy } from "../use-pipeline-refresh";
+import { usePipelineBusy, useSectionBusy, useAnySectionBusy, useRerun } from "../use-pipeline-refresh";
 import { NodeHeader, type VersionApi } from "../node-header";
 
 export interface EnrichedSection extends SectionRendering {
@@ -124,7 +123,6 @@ function SectionCard({
   pageId,
   isEditing,
   editLoading,
-  rerunLoading,
   onToggleEdit,
   onCancelEdit,
   onEditSubmit,
@@ -141,7 +139,6 @@ function SectionCard({
   pageId: string;
   isEditing: boolean;
   editLoading: boolean;
-  rerunLoading: boolean;
   onToggleEdit: () => void;
   onCancelEdit: () => void;
   onEditSubmit: (imageBase64: string, annotations: Annotation[]) => void;
@@ -156,6 +153,7 @@ function SectionCard({
   const editorRef = useRef<SectionAnnotationEditorHandle>(null);
   const [canSubmitEdit, setCanSubmitEdit] = useState(false);
   const [displayedHtml, setDisplayedHtml] = useState(section.html);
+  const sectionBusy = useSectionBusy(pageId, section.section_index);
 
   const sectionId = `${pageId}_s${String(section.section_index).padStart(3, "0")}`;
 
@@ -202,7 +200,7 @@ function SectionCard({
           setDisplayedHtml(json.section.html);
           onSectionUpdated(json.section, newVersion, newVersions);
         }}
-        rerunLoading={rerunLoading || editLoading}
+        rerunLoading={sectionBusy || editLoading}
         rerunDisabled={editLoading}
         onRerun={onRerun}
         rerunTitle="Rerun section"
@@ -269,16 +267,18 @@ export function WebRenderingPanel({
   panelLoaded,
   onTogglePanel,
 }: WebRenderingPanelProps) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const pipelineBusy = usePipelineBusy(pageId, "web-rendering");
+  const anySectionBusy = useAnySectionBusy(pageId);
+  const { rerun: rerunAll, error: rerunAllError } = useRerun(
+    `/api/books/${label}/pages/${pageId}/web-rendering`
+  );
+  const [editError, setEditError] = useState<string | null>(null);
+  const error = rerunAllError || editError;
   const [sections, setSections] = useState<EnrichedSection[]>(
     initialSections ?? []
   );
   const [editingSection, setEditingSection] = useState<number | null>(null);
   const [editLoading, setEditLoading] = useState(false);
-  const [rerunLoadingSections, setRerunLoadingSections] = useState<Set<number>>(new Set());
   const sectionHeights = useRef<Map<number, number>>(new Map());
 
   // Sync sections when initialSections changes (e.g. after router.refresh())
@@ -286,55 +286,10 @@ export function WebRenderingPanel({
     setSections(initialSections ?? []);
   }, [initialSections]);
 
-  function trackSectionJob(jobId: string, sectionIndex: number) {
-    const es = new EventSource(`/api/queue?jobId=${jobId}`);
-    es.addEventListener("job", (e) => {
-      try {
-        const job = JSON.parse(e.data);
-        if (job.status === "completed") {
-          const { section: updatedSection, version: newVersion, versions: newVersions } = job.result as {
-            section: EnrichedSection;
-            version: number;
-            versions: number[];
-          };
-          setSections((prev) =>
-            prev.map((s) =>
-              s.section_index === sectionIndex
-                ? { ...updatedSection, version: newVersion, versions: newVersions }
-                : s
-            )
-          );
-          setRerunLoadingSections((prev) => {
-            const next = new Set(prev);
-            next.delete(sectionIndex);
-            return next;
-          });
-          es.close();
-        } else if (job.status === "failed") {
-          setError(job.error ?? "Rendering failed");
-          setRerunLoadingSections((prev) => {
-            const next = new Set(prev);
-            next.delete(sectionIndex);
-            return next;
-          });
-          es.close();
-        }
-      } catch { /* skip */ }
-    });
-    es.onerror = () => {
-      setError("Connection to job queue lost");
-      setRerunLoadingSections((prev) => {
-        const next = new Set(prev);
-        next.delete(sectionIndex);
-        return next;
-      });
-      es.close();
-    };
-  }
+  const busy = pipelineBusy || anySectionBusy;
 
   async function handleRerunSection(sectionIndex: number) {
-    setRerunLoadingSections((prev) => new Set(prev).add(sectionIndex));
-    setError(null);
+    setEditError(null);
     try {
       const res = await fetch(
         `/api/books/${label}/pages/${pageId}/web-rendering/${sectionIndex}/rerun`,
@@ -344,95 +299,8 @@ export function WebRenderingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const { jobId } = await res.json();
-      if (!jobId) throw new Error("No job ID returned");
-      trackSectionJob(jobId, sectionIndex);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setRerunLoadingSections((prev) => {
-        const next = new Set(prev);
-        next.delete(sectionIndex);
-        return next;
-      });
-    }
-  }
-
-  async function handleRerun() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/books/${label}/pages/${pageId}/web-rendering`,
-        { method: "POST" }
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Request failed (${res.status})`);
-      }
-      const { jobIds } = await res.json();
-      if (!jobIds || !Array.isArray(jobIds) || jobIds.length === 0) {
-        throw new Error("No job IDs returned");
-      }
-
-      // Mark all sections as rerunning
-      const sectionIndices = sections
-        .filter((s) => s.html)
-        .map((s) => s.section_index);
-      setRerunLoadingSections(new Set(sectionIndices));
-
-      // Track each job via SSE
-      let completedCount = 0;
-      for (const jobId of jobIds) {
-        const es = new EventSource(`/api/queue?jobId=${jobId}`);
-        es.addEventListener("job", (e) => {
-          try {
-            const job = JSON.parse(e.data);
-            if (job.status === "completed") {
-              const { section: updatedSection, version: newVersion, versions: newVersions } = job.result as {
-                section: EnrichedSection;
-                version: number;
-                versions: number[];
-              };
-              setSections((prev) =>
-                prev.map((s) =>
-                  s.section_index === updatedSection.section_index
-                    ? { ...updatedSection, version: newVersion, versions: newVersions }
-                    : s
-                )
-              );
-              setRerunLoadingSections((prev) => {
-                const next = new Set(prev);
-                next.delete(updatedSection.section_index);
-                return next;
-              });
-              completedCount++;
-              if (completedCount >= jobIds.length) {
-                setLoading(false);
-                router.refresh();
-              }
-              es.close();
-            } else if (job.status === "failed") {
-              setError(job.error ?? "Rendering failed");
-              completedCount++;
-              if (completedCount >= jobIds.length) {
-                setLoading(false);
-              }
-              es.close();
-            }
-          } catch { /* skip */ }
-        });
-        es.onerror = () => {
-          setError("Connection to job queue lost");
-          completedCount++;
-          if (completedCount >= jobIds.length) {
-            setLoading(false);
-          }
-          es.close();
-        };
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setLoading(false);
+      setEditError(err instanceof Error ? err.message : "Unknown error");
     }
   }
 
@@ -443,7 +311,7 @@ export function WebRenderingPanel({
     annotations: Annotation[]
   ) {
     setEditLoading(true);
-    setError(null);
+    setEditError(null);
     try {
       const res = await fetch(
         `/api/books/${label}/pages/${pageId}/web-rendering/${sectionIndex}/edit`,
@@ -485,19 +353,19 @@ export function WebRenderingPanel({
             setEditLoading(false);
             es.close();
           } else if (job.status === "failed") {
-            setError(job.error ?? "Edit failed");
+            setEditError(job.error ?? "Edit failed");
             setEditLoading(false);
             es.close();
           }
         } catch { /* skip */ }
       });
       es.onerror = () => {
-        setError("Connection to job queue lost");
+        setEditError("Connection to job queue lost");
         setEditLoading(false);
         es.close();
       };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setEditError(err instanceof Error ? err.message : "Unknown error");
       setEditLoading(false);
     }
   }
@@ -547,8 +415,8 @@ export function WebRenderingPanel({
         )}
         <button
           type="button"
-          onClick={handleRerun}
-          disabled={loading || pipelineBusy}
+          onClick={rerunAll}
+          disabled={busy}
           className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-slate-600 disabled:opacity-50 transition-colors"
           title={initialSections ? "Rerun web rendering" : "Run web rendering"}
         >
@@ -556,7 +424,7 @@ export function WebRenderingPanel({
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            className={`h-4 w-4 ${loading || pipelineBusy ? "animate-spin" : ""}`}
+            className={`h-4 w-4 ${busy ? "animate-spin" : ""}`}
           >
             <path
               fillRule="evenodd"
@@ -604,7 +472,6 @@ export function WebRenderingPanel({
               pageId={pageId}
               isEditing={editingSection === section.section_index}
               editLoading={editLoading}
-              rerunLoading={rerunLoadingSections.has(section.section_index)}
               initialVersion={section.version}
               initialVersions={section.versions}
               onToggleEdit={() =>
