@@ -449,7 +449,7 @@ export function SectionsPanel({
                       textDragRef.current = null;
                       setTextDragOver(null);
                     }}
-                    className="h-3"
+                    className="h-2"
                   >
                     {textDragOver?.partId === partId && textDragOver.index === group.texts.length && <DropIndicator />}
                   </div>
@@ -545,7 +545,7 @@ export function SectionsPanel({
             partDragRef.current = null;
             setPartDragOver(null);
           }}
-          className="h-4"
+          className="h-2"
         >
           {isPartDropTarget(endIdx) && <DropIndicator />}
         </div>
@@ -587,7 +587,7 @@ export function SectionsPanel({
       />
 
       {sectioning ? (
-        <div className="space-y-4 p-4">
+        <div className="space-y-3 p-3">
           {sectioning.sections.length === 0 && (
             <p className="text-sm italic text-muted">
               No sections found for this page.
@@ -667,7 +667,7 @@ export function SectionsPanel({
                 </div>
 
                 {/* Section content — assigned parts, then unassigned parts pruned */}
-                <div className="space-y-3 px-4 pb-4">
+                <div className="space-y-2 px-4 pb-2">
                   {section.part_ids.length === 0 && (
                     <p className="text-sm italic text-faint">
                       No parts assigned to this section.
