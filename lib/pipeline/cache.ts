@@ -24,6 +24,7 @@ export async function cachedGenerateObject<T>(
   opts: {
     validate?: (result: T) => ValidationResult;
     maxRetries?: number;
+    skipCache?: boolean;
     log: {
       label: string;
       taskType: string;
@@ -57,7 +58,7 @@ export async function cachedGenerateObject<T>(
     try {
       let result: T;
 
-      if (!process.env.RECACHE && fs.existsSync(cacheFile)) {
+      if (!process.env.RECACHE && !opts.skipCache && fs.existsSync(cacheFile)) {
         result = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
         lastCacheHit = true;
       } else {
@@ -213,6 +214,7 @@ export async function cachedPromptGenerateObject<T>(options: {
   promptContext: Record<string, unknown>;
   validate?: (result: T) => ValidationResult;
   maxRetries?: number;
+  skipCache?: boolean;
 }): Promise<T> {
   const promptMessages = await renderPrompt(
     options.promptName,
@@ -234,6 +236,7 @@ export async function cachedPromptGenerateObject<T>(options: {
     {
       validate: options.validate,
       maxRetries: options.maxRetries,
+      skipCache: options.skipCache,
       log: {
         label: options.label,
         taskType: options.taskType,

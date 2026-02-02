@@ -2,6 +2,7 @@ import { extractMetadata } from "@/lib/pipeline/metadata/metadata";
 import { getBookMetadata, listPages } from "@/lib/books";
 import {
   runWebRendering,
+  runWebRenderingSection,
   runWebEdit,
   runTextClassification,
   runPageSectioning,
@@ -15,6 +16,7 @@ export type JobStatus = "queued" | "running" | "completed" | "failed";
 export type JobType =
   | "metadata"
   | "web-rendering"
+  | "web-rendering-section"
   | "web-edit"
   | "text-classification"
   | "page-sectioning"
@@ -76,8 +78,10 @@ class JobQueue {
       const job = this.jobs.get(jobId);
       if (!job) continue;
 
-      // Resolve executor dynamically so hot-reloaded code is always used
-      const executor = getExecutor(job.type);
+      const resolveExecutor = (globalThis as unknown as {
+        __getJobExecutor?: (type: JobType) => JobExecutor | undefined;
+      }).__getJobExecutor ?? getExecutor;
+      const executor = resolveExecutor(job.type);
       if (!executor) {
         this.updateJob(job, {
           status: "failed",
@@ -166,18 +170,26 @@ class JobQueue {
   }
 }
 
-// --- Executor lookup (resolved dynamically for hot-reload compatibility) ---
+// --- Executor lookup ---
+// Stored on globalThis so the persisted queue singleton always picks up the
+// latest module code after a Next.js hot-reload.
 
 function getExecutor(type: JobType): JobExecutor | undefined {
   switch (type) {
     case "metadata": return metadataExecutor;
     case "web-rendering": return webRenderingExecutor;
+    case "web-rendering-section": return webRenderingSectionExecutor;
     case "web-edit": return webEditExecutor;
     case "text-classification": return textClassificationExecutor;
     case "page-sectioning": return pageSectioningExecutor;
     case "page-pipeline": return pagePipelineExecutor;
   }
 }
+
+const globalForExecutors = globalThis as unknown as {
+  __getJobExecutor?: (type: JobType) => JobExecutor | undefined;
+};
+globalForExecutors.__getJobExecutor = getExecutor;
 
 // --- Executors ---
 
@@ -214,7 +226,21 @@ const metadataExecutor: JobExecutor = (job, update) => {
 const webRenderingExecutor: JobExecutor = async (job, update) => {
   const pageId = job.params?.pageId as string;
   const result = await runWebRendering(job.label, pageId, (msg) =>
-    update({ progress: msg })
+    update({ progress: msg }),
+    { skipCache: true }
+  );
+  update({ result, status: "completed", completedAt: Date.now() });
+};
+
+const webRenderingSectionExecutor: JobExecutor = async (job, update) => {
+  const pageId = job.params?.pageId as string;
+  const sectionIndex = job.params?.sectionIndex as number;
+  const result = await runWebRenderingSection(
+    job.label,
+    pageId,
+    sectionIndex,
+    (msg) => update({ progress: msg }),
+    { skipCache: true }
   );
   update({ result, status: "completed", completedAt: Date.now() });
 };

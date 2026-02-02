@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   ImageEntry,
   PageImageClassification,
 } from "@/lib/pipeline/image-classification/image-classification-schema";
 import { ImageCropDialog } from "./image-crop-dialog";
+import { NodeHeader, type VersionApi } from "../node-header";
 
 interface ImageClassificationPanelProps {
   label: string;
@@ -16,6 +17,7 @@ interface ImageClassificationPanelProps {
   initialClassification: PageImageClassification | null;
   initialVersion: number;
   availableVersions: number[];
+  initialImageHashes: Record<string, string>;
 }
 
 export function ImageClassificationPanel({
@@ -26,48 +28,44 @@ export function ImageClassificationPanel({
   initialClassification,
   initialVersion,
   availableVersions: initialAvailableVersions,
+  initialImageHashes,
 }: ImageClassificationPanelProps) {
   const router = useRouter();
   const [data, setData] = useState<PageImageClassification | null>(
     initialClassification
   );
-  const [version, setVersion] = useState(initialVersion);
-  const [latestVersion, setLatestVersion] = useState(initialVersion);
   const [versions, setVersions] = useState(initialAvailableVersions);
+  const [imageHashes, setImageHashes] = useState<Record<string, string>>(initialImageHashes);
+  const currentVersionRef = useRef(initialVersion);
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cropImageId, setCropImageId] = useState<string | null>(null);
   const [pendingCrops, setPendingCrops] = useState<Set<string>>(new Set());
-  const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
-  const versionDropdownRef = useRef<HTMLDivElement>(null);
-
-  const versionLabel = `v${version}`;
-
-  // Close version dropdown on outside click / escape
-  useEffect(() => {
-    if (!versionDropdownOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setVersionDropdownOpen(false);
-    };
-    const onClick = (e: MouseEvent) => {
-      if (
-        versionDropdownRef.current &&
-        !versionDropdownRef.current.contains(e.target as Node)
-      ) {
-        setVersionDropdownOpen(false);
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onClick);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
-    };
-  }, [versionDropdownOpen]);
 
   const apiBase = `/api/books/${label}/pages/${pageId}/image-classification`;
+
+  const versionApi: VersionApi = useMemo(() => ({
+    loadVersion: async (v: number) => {
+      const res = await fetch(apiBase, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: v }),
+      });
+      if (!res.ok) throw new Error("Failed to load version");
+      return res.json();
+    },
+    saveVersion: async (v: number) => {
+      const res = await fetch(apiBase, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data, baseVersion: v }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+  }), [apiBase, data]);
 
   async function handleRerun() {
     setRunning(true);
@@ -79,36 +77,17 @@ export function ImageClassificationPanel({
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
       const json = await res.json();
-      const { version: newVersion, ...rest } = json;
+      const { version: newVersion, versions: newVersions, imageHashes: newHashes, ...rest } = json;
       setData(rest as PageImageClassification);
-      setVersion(newVersion);
-      setLatestVersion(newVersion);
-      setVersions([1]);
+      currentVersionRef.current = newVersion;
+      setVersions(newVersions ?? [newVersion]);
+      if (newHashes) setImageHashes(newHashes);
       setIsDirty(false);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setRunning(false);
-    }
-  }
-
-  async function loadVersion(v: number) {
-    setVersionDropdownOpen(false);
-    if (v === version) return;
-    try {
-      const res = await fetch(apiBase, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: v }),
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-      setData(json.data as PageImageClassification);
-      setVersion(v);
-      setIsDirty(v !== latestVersion);
-    } catch {
-      // ignore
     }
   }
 
@@ -179,15 +158,10 @@ export function ImageClassificationPanel({
 
   async function discardEdits() {
     try {
-      const res = await fetch(apiBase, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: latestVersion }),
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-      setData(json.data as PageImageClassification);
-      setVersion(latestVersion);
+      const json = await versionApi.loadVersion(currentVersionRef.current);
+      const resp = json as { data: PageImageClassification; imageHashes?: Record<string, string> };
+      setData(resp.data);
+      if (resp.imageHashes) setImageHashes(resp.imageHashes);
     } catch {
       // ignore
     }
@@ -201,14 +175,14 @@ export function ImageClassificationPanel({
       const res = await fetch(apiBase, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data, baseVersion: version }),
+        body: JSON.stringify({ data, baseVersion: currentVersionRef.current }),
       });
       if (!res.ok) return;
       const json = await res.json();
-      const { version: newVersion, ...rest } = json;
+      const { version: newVersion, imageHashes: newHashes, ...rest } = json;
       setData(rest as PageImageClassification);
-      setVersion(newVersion);
-      setLatestVersion(newVersion);
+      currentVersionRef.current = newVersion;
+      if (newHashes) setImageHashes(newHashes);
       setIsDirty(false);
       setPendingCrops(new Set());
       setVersions((prev) =>
@@ -223,29 +197,6 @@ export function ImageClassificationPanel({
     }
   }
 
-  const rerunButton = (
-    <button
-      type="button"
-      onClick={handleRerun}
-      disabled={running || isDirty}
-      className="cursor-pointer rounded p-1 text-white/80 hover:text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
-      title={data ? "Rerun image classification" : "Run image classification"}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        className={`h-4 w-4 ${running ? "animate-spin" : ""}`}
-      >
-        <path
-          fillRule="evenodd"
-          d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.598a.75.75 0 00-.75.75v3.634a.75.75 0 001.5 0v-2.434l.311.312a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm-10.624-2.85a5.5 5.5 0 019.201-2.465l.312.311H11.768a.75.75 0 000 1.5h3.634a.75.75 0 00.75-.75V3.53a.75.75 0 00-1.5 0v2.434l-.311-.312A7 7 0 002.629 8.79a.75.75 0 001.449.39z"
-          clipRule="evenodd"
-        />
-      </svg>
-    </button>
-  );
-
   const classificationMap = new Map(
     (data?.images ?? []).map((img) => [img.image_id, img])
   );
@@ -258,82 +209,32 @@ export function ImageClassificationPanel({
 
   return (
     <div>
-      <div className="flex items-center gap-2 bg-amber-600 px-4 py-2 text-sm font-semibold text-white">
-        <span>Images</span>
-        {error && (
-          <span className="text-xs font-normal text-red-200">{error}</span>
-        )}
-        <div className="ml-auto flex items-center gap-1.5">
-          {isDirty && (
-            <>
-              <button
-                type="button"
-                onClick={discardEdits}
-                disabled={saving}
-                className="cursor-pointer rounded bg-amber-500 px-2 py-0.5 text-xs font-medium hover:bg-amber-400 disabled:opacity-50 transition-colors"
-              >
-                Discard
-              </button>
-              <button
-                type="button"
-                onClick={saveChanges}
-                disabled={saving}
-                className="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-70 transition-colors"
-              >
-                {saving && (
-                  <svg
-                    className="h-3 w-3 animate-spin"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                )}
-                Save
-              </button>
-            </>
-          )}
-          {data && versions.length > 0 && (
-            <div ref={versionDropdownRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
-                className="cursor-pointer rounded bg-amber-500 px-1.5 py-0.5 text-xs font-medium hover:bg-amber-400 transition-colors"
-              >
-                {versionLabel} ▾
-              </button>
-              {versionDropdownOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-                  {versions.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => loadVersion(v)}
-                      className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
-                    >
-                      {`v${v}`}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {rerunButton}
-        </div>
-      </div>
+      <NodeHeader
+        title="Images"
+        color="amber"
+        initialVersion={initialVersion}
+        initialVersions={versions}
+        versionApi={versionApi}
+        onVersionLoaded={(v, raw) => {
+          const resp = raw as { data: PageImageClassification; imageHashes?: Record<string, string> };
+          setData(resp.data);
+          currentVersionRef.current = v;
+          if (resp.imageHashes) setImageHashes(resp.imageHashes);
+        }}
+        onVersionSaved={(newVersion, newVersions) => {
+          currentVersionRef.current = newVersion;
+          setVersions(newVersions);
+        }}
+        rerunLoading={running}
+        rerunDisabled={isDirty}
+        onRerun={handleRerun}
+        rerunTitle={data ? "Rerun image classification" : "Run image classification"}
+        isDirty={isDirty}
+        onDirtySave={saveChanges}
+        onDirtyDiscard={discardEdits}
+        dirtySaving={saving}
+        error={error}
+      />
       <div className="p-4">
         {allImageIds.length > 0 ? (
           <div className="grid auto-rows-min grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -353,11 +254,13 @@ export function ImageClassificationPanel({
                       height: `${(entry.source_region.height / sourceEntry.height) * 100}%`,
                     }
                   : null;
+              const displayId = isPendingCrop ? (entry?.source_image_id ?? imageId) : imageId;
+              const hash = imageHashes[displayId] ?? "";
               return (
                   <div key={imageId} className="self-start">
                     <div className="group/img relative">
                     <img
-                      src={`/api/books/${label}/pages/${pageId}/images/${isPendingCrop ? (entry?.source_image_id ?? imageId) : imageId}?v=${version}`}
+                      src={`/api/books/${label}/pages/${pageId}/images/${displayId}?h=${hash}`}
                       alt={imageId}
                       className={`w-full rounded-t border border-border ${isPruned ? "opacity-50" : ""}`}
                     />
@@ -428,7 +331,7 @@ export function ImageClassificationPanel({
       </div>
       {cropImageId && (
         <ImageCropDialog
-          src={`/api/books/${label}/pages/${pageId}/images/${cropImageId}?v=${version}`}
+          src={`/api/books/${label}/pages/${pageId}/images/${cropImageId}?h=${imageHashes[cropImageId] ?? ""}`}
           alt={cropImageId}
           onCrop={(c) => updateCrop(cropImageId, c)}
           onClose={() => setCropImageId(null)}

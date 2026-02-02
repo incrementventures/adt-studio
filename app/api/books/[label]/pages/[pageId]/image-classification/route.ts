@@ -7,11 +7,11 @@ import {
   getPage,
   getExtractedImages,
   getMaxImageNum,
+  getImageHashes,
   listImageClassificationVersions,
   getImageClassificationVersion,
   getLatestImageClassificationPath,
   putNodeData,
-  resetNodeVersions,
   putImage,
 } from "@/lib/books";
 import type { PageImageClassification } from "@/lib/pipeline/image-classification/image-classification-schema";
@@ -53,7 +53,8 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ versions, current, data });
+  const imageHashes = getImageHashes(label, pageId);
+  return NextResponse.json({ versions, current, data, imageHashes });
 }
 
 export async function POST(
@@ -96,22 +97,25 @@ export async function POST(
     const pageBuf = fs.readFileSync(pageImagePath);
     const pageWidth = pageBuf.readUInt32BE(16);
     const pageHeight = pageBuf.readUInt32BE(20);
+    const im000Id = `${pageId}_im000`;
+    const im000Path = `images/${pageId}_page.png`;
+    putImage(label, im000Id, pageId, im000Path, hashBuffer(pageBuf), pageWidth, pageHeight, "page");
     classification.images.unshift({
-      image_id: `${pageId}_im000`,
-      path: `images/${pageId}_page.png`,
+      image_id: im000Id,
+      path: im000Path,
       width: pageWidth,
       height: pageHeight,
       is_pruned: true,
     });
   }
 
-  // Write to DB as version 1
-  putNodeData(label, "image-classification", pageId, 1, classification);
+  // Write as next version
+  const existingVersions = listImageClassificationVersions(label, pageId);
+  const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+  putNodeData(label, "image-classification", pageId, nextVersion, classification);
 
-  // Reset version tracking
-  resetNodeVersions(label, "image-classification", pageId);
-
-  return NextResponse.json({ version: 1, ...classification });
+  const imageHashes = getImageHashes(label, pageId);
+  return NextResponse.json({ version: nextVersion, versions: listImageClassificationVersions(label, pageId), imageHashes, ...classification });
 }
 
 export async function PUT(
@@ -143,7 +147,8 @@ export async function PUT(
   }
 
   const data = getImageClassificationVersion(label, pageId, version);
-  return NextResponse.json({ versions, current: version, data });
+  const imageHashes = getImageHashes(label, pageId);
+  return NextResponse.json({ versions, current: version, data, imageHashes });
 }
 
 export async function PATCH(
@@ -210,5 +215,6 @@ export async function PATCH(
   // Write versioned data to DB
   putNodeData(label, "image-classification", pageId, nextVersion, data);
 
-  return NextResponse.json({ version: nextVersion, ...data });
+  const imageHashes = getImageHashes(label, pageId);
+  return NextResponse.json({ version: nextVersion, imageHashes, ...data });
 }

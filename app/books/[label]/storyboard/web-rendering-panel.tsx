@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { SectionRendering } from "@/lib/books";
 import type { Annotation } from "@/lib/pipeline/web-rendering/edit-section";
@@ -9,6 +9,7 @@ import {
   type SectionAnnotationEditorHandle,
 } from "./section-annotation-editor";
 import { usePipelineBusy } from "../use-pipeline-refresh";
+import { NodeHeader, type VersionApi } from "../node-header";
 
 export interface EnrichedSection extends SectionRendering {
   version: number;
@@ -117,9 +118,11 @@ function SectionCard({
   pageId,
   isEditing,
   editLoading,
+  rerunLoading,
   onToggleEdit,
   onCancelEdit,
   onEditSubmit,
+  onRerun,
   onHeightChange,
   iframeHeight,
   initialVersion,
@@ -131,9 +134,11 @@ function SectionCard({
   pageId: string;
   isEditing: boolean;
   editLoading: boolean;
+  rerunLoading: boolean;
   onToggleEdit: () => void;
   onCancelEdit: () => void;
   onEditSubmit: (imageBase64: string, annotations: Annotation[]) => void;
+  onRerun: () => void;
   onHeightChange: (h: number) => void;
   iframeHeight: number;
   initialVersion: number;
@@ -143,51 +148,17 @@ function SectionCard({
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<SectionAnnotationEditorHandle>(null);
   const [canSubmitEdit, setCanSubmitEdit] = useState(false);
-  const [savingVersion, setSavingVersion] = useState(false);
-  const [version, setVersion] = useState(initialVersion);
-  const [latestVersion, setLatestVersion] = useState(initialVersion);
-  const [versions, setVersions] = useState(initialVersions);
-  const [isOldVersion, setIsOldVersion] = useState(false);
-  const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
-  const versionDropdownRef = useRef<HTMLDivElement>(null);
+  const [displayedHtml, setDisplayedHtml] = useState(section.html);
 
-  const versionLabel = `v${version}`;
   const sectionId = `${pageId}_s${String(section.section_index).padStart(3, "0")}`;
 
-  // Sync from parent when props change (e.g. after router.refresh())
+  // Sync displayed HTML from parent when props change (e.g. after rerun/edit)
   useEffect(() => {
-    setVersion(initialVersion);
-    setLatestVersion(initialVersion);
-    setVersions(initialVersions);
-    setIsOldVersion(false);
-  }, [initialVersion, initialVersions]);
+    setDisplayedHtml(section.html);
+  }, [section.html]);
 
-  // Close version dropdown on outside click / escape
-  useEffect(() => {
-    if (!versionDropdownOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setVersionDropdownOpen(false);
-    };
-    const onClick = (e: MouseEvent) => {
-      if (
-        versionDropdownRef.current &&
-        !versionDropdownRef.current.contains(e.target as Node)
-      ) {
-        setVersionDropdownOpen(false);
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onClick);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
-    };
-  }, [versionDropdownOpen]);
-
-  async function loadVersion(v: number) {
-    setVersionDropdownOpen(false);
-    if (v === version) return;
-    try {
+  const versionApi: VersionApi = useMemo(() => ({
+    loadVersion: async (v: number) => {
       const res = await fetch(
         `/api/books/${label}/pages/${pageId}/web-rendering/version`,
         {
@@ -196,62 +167,22 @@ function SectionCard({
           body: JSON.stringify({ sectionId, version: v }),
         }
       );
-      if (!res.ok) return;
-      const json = await res.json();
-      setVersion(v);
-      setIsOldVersion(v !== latestVersion);
-      onSectionUpdated(json.section, v, versions);
-    } catch {
-      // ignore
-    }
-  }
-
-  async function discardOldVersion() {
-    try {
-      const res = await fetch(
-        `/api/books/${label}/pages/${pageId}/web-rendering/version`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sectionId, version: latestVersion }),
-        }
-      );
-      if (!res.ok) return;
-      const json = await res.json();
-      setVersion(latestVersion);
-      setIsOldVersion(false);
-      onSectionUpdated(json.section, latestVersion, versions);
-    } catch {
-      // ignore
-    }
-  }
-
-  async function saveOldVersion() {
-    setSavingVersion(true);
-    try {
+      if (!res.ok) throw new Error("Failed to load version");
+      return res.json();
+    },
+    saveVersion: async (v: number) => {
       const res = await fetch(
         `/api/books/${label}/pages/${pageId}/web-rendering/version`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sectionId, version }),
+          body: JSON.stringify({ sectionId, version: v }),
         }
       );
-      if (!res.ok) return;
-      const json = await res.json();
-      const newVersion = json.version as number;
-      const newVersions = json.versions as number[];
-      setVersion(newVersion);
-      setLatestVersion(newVersion);
-      setVersions(newVersions);
-      setIsOldVersion(false);
-      onSectionUpdated(json.section, newVersion, newVersions);
-    } catch {
-      // ignore
-    } finally {
-      setSavingVersion(false);
-    }
-  }
+      if (!res.ok) throw new Error("Failed to save version");
+      return res.json();
+    },
+  }), [label, pageId, sectionId]);
 
   if (!section.html) {
     return (
@@ -265,64 +196,32 @@ function SectionCard({
 
   return (
     <div className="rounded-lg border border-border overflow-hidden">
-      <div className="flex items-center px-4 py-2 bg-surface/30">
-        <span className="text-xs font-medium uppercase tracking-wider text-faint">
-          {section.section_type.replace(/_/g, " ")}
-        </span>
-        {!isEditing && versions.length > 1 && (
-          <div className="ml-auto flex items-center gap-1.5">
-            {isOldVersion && (
-              <>
-                <button
-                  type="button"
-                  onClick={discardOldVersion}
-                  disabled={savingVersion}
-                  className="cursor-pointer rounded bg-surface/60 px-2 py-0.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-50 transition-colors"
-                >
-                  Discard
-                </button>
-                <button
-                  type="button"
-                  onClick={saveOldVersion}
-                  disabled={savingVersion}
-                  className="cursor-pointer rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {savingVersion ? "Saving..." : "Save"}
-                </button>
-              </>
-            )}
-            <div ref={versionDropdownRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
-                className="cursor-pointer rounded bg-surface/60 px-1.5 py-0.5 text-xs font-medium text-muted hover:bg-surface hover:text-foreground transition-colors"
-              >
-                {versionLabel} ▾
-              </button>
-              {versionDropdownOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-                  {versions.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => loadVersion(v)}
-                      className={`flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-surface ${v === version ? "font-semibold bg-surface" : ""}`}
-                    >
-                      {`v${v}`}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {isEditing && (
+      <NodeHeader
+        title={section.section_type.replace(/_/g, " ")}
+        initialVersion={initialVersion}
+        initialVersions={initialVersions}
+        versionApi={versionApi}
+        onVersionLoaded={(_v, data) => {
+          const json = data as { section: SectionRendering };
+          setDisplayedHtml(json.section.html);
+        }}
+        onVersionSaved={(newVersion, newVersions, data) => {
+          const json = data as { section: SectionRendering };
+          setDisplayedHtml(json.section.html);
+          onSectionUpdated(json.section, newVersion, newVersions);
+        }}
+        rerunLoading={rerunLoading}
+        rerunDisabled={editLoading}
+        onRerun={onRerun}
+        rerunTitle="Rerun section"
+      >
+        {isEditing ? (
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={onCancelEdit}
               disabled={editLoading}
-              className="cursor-pointer rounded px-2 py-0.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-50 transition-colors"
+              className="cursor-pointer rounded px-2 py-0.5 text-xs font-medium text-white/80 hover:text-white disabled:opacity-50 transition-colors"
             >
               Discard
             </button>
@@ -335,8 +234,8 @@ function SectionCard({
               {editLoading ? "Saving..." : "Save"}
             </button>
           </div>
-        )}
-      </div>
+        ) : undefined}
+      </NodeHeader>
       <div
         ref={containerRef}
         className="group relative"
@@ -357,7 +256,7 @@ function SectionCard({
           </button>
         )}
         <SandboxedSection
-          srcDoc={buildSrcDoc(section.html, label, pageId)}
+          srcDoc={buildSrcDoc(displayedHtml, label, pageId)}
           onHeightChange={onHeightChange}
           initialHeight={iframeHeight}
         />
@@ -403,12 +302,84 @@ export function WebRenderingPanel({
   );
   const [editingSection, setEditingSection] = useState<number | null>(null);
   const [editLoading, setEditLoading] = useState(false);
+  const [rerunLoadingSections, setRerunLoadingSections] = useState<Set<number>>(new Set());
   const sectionHeights = useRef<Map<number, number>>(new Map());
 
   // Sync sections when initialSections changes (e.g. after router.refresh())
   useEffect(() => {
     setSections(initialSections ?? []);
   }, [initialSections]);
+
+  function trackSectionJob(jobId: string, sectionIndex: number) {
+    const es = new EventSource(`/api/queue?jobId=${jobId}`);
+    es.addEventListener("job", (e) => {
+      try {
+        const job = JSON.parse(e.data);
+        if (job.status === "completed") {
+          const { section: updatedSection, version: newVersion, versions: newVersions } = job.result as {
+            section: EnrichedSection;
+            version: number;
+            versions: number[];
+          };
+          setSections((prev) =>
+            prev.map((s) =>
+              s.section_index === sectionIndex
+                ? { ...updatedSection, version: newVersion, versions: newVersions }
+                : s
+            )
+          );
+          setRerunLoadingSections((prev) => {
+            const next = new Set(prev);
+            next.delete(sectionIndex);
+            return next;
+          });
+          es.close();
+        } else if (job.status === "failed") {
+          setError(job.error ?? "Rendering failed");
+          setRerunLoadingSections((prev) => {
+            const next = new Set(prev);
+            next.delete(sectionIndex);
+            return next;
+          });
+          es.close();
+        }
+      } catch { /* skip */ }
+    });
+    es.onerror = () => {
+      setError("Connection to job queue lost");
+      setRerunLoadingSections((prev) => {
+        const next = new Set(prev);
+        next.delete(sectionIndex);
+        return next;
+      });
+      es.close();
+    };
+  }
+
+  async function handleRerunSection(sectionIndex: number) {
+    setRerunLoadingSections((prev) => new Set(prev).add(sectionIndex));
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/books/${label}/pages/${pageId}/web-rendering/${sectionIndex}/rerun`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("No job ID returned");
+      trackSectionJob(jobId, sectionIndex);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setRerunLoadingSections((prev) => {
+        const next = new Set(prev);
+        next.delete(sectionIndex);
+        return next;
+      });
+    }
+  }
 
   async function handleRerun() {
     setLoading(true);
@@ -422,31 +393,67 @@ export function WebRenderingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
       }
-      const { jobId } = await res.json();
-      if (!jobId) throw new Error("No job ID returned");
+      const { jobIds } = await res.json();
+      if (!jobIds || !Array.isArray(jobIds) || jobIds.length === 0) {
+        throw new Error("No job IDs returned");
+      }
 
-      const es = new EventSource(`/api/queue?jobId=${jobId}`);
-      es.addEventListener("job", (e) => {
-        try {
-          const job = JSON.parse(e.data);
-          if (job.status === "completed") {
-            const result = job.result as { sections: EnrichedSection[] };
-            setSections(result.sections ?? []);
+      // Mark all sections as rerunning
+      const sectionIndices = sections
+        .filter((s) => s.html)
+        .map((s) => s.section_index);
+      setRerunLoadingSections(new Set(sectionIndices));
+
+      // Track each job via SSE
+      let completedCount = 0;
+      for (const jobId of jobIds) {
+        const es = new EventSource(`/api/queue?jobId=${jobId}`);
+        es.addEventListener("job", (e) => {
+          try {
+            const job = JSON.parse(e.data);
+            if (job.status === "completed") {
+              const { section: updatedSection, version: newVersion, versions: newVersions } = job.result as {
+                section: EnrichedSection;
+                version: number;
+                versions: number[];
+              };
+              setSections((prev) =>
+                prev.map((s) =>
+                  s.section_index === updatedSection.section_index
+                    ? { ...updatedSection, version: newVersion, versions: newVersions }
+                    : s
+                )
+              );
+              setRerunLoadingSections((prev) => {
+                const next = new Set(prev);
+                next.delete(updatedSection.section_index);
+                return next;
+              });
+              completedCount++;
+              if (completedCount >= jobIds.length) {
+                setLoading(false);
+                router.refresh();
+              }
+              es.close();
+            } else if (job.status === "failed") {
+              setError(job.error ?? "Rendering failed");
+              completedCount++;
+              if (completedCount >= jobIds.length) {
+                setLoading(false);
+              }
+              es.close();
+            }
+          } catch { /* skip */ }
+        });
+        es.onerror = () => {
+          setError("Connection to job queue lost");
+          completedCount++;
+          if (completedCount >= jobIds.length) {
             setLoading(false);
-            router.refresh();
-            es.close();
-          } else if (job.status === "failed") {
-            setError(job.error ?? "Rendering failed");
-            setLoading(false);
-            es.close();
           }
-        } catch { /* skip */ }
-      });
-      es.onerror = () => {
-        setError("Connection to job queue lost");
-        setLoading(false);
-        es.close();
-      };
+          es.close();
+        };
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setLoading(false);
@@ -565,6 +572,7 @@ export function WebRenderingPanel({
               pageId={pageId}
               isEditing={editingSection === section.section_index}
               editLoading={editLoading}
+              rerunLoading={rerunLoadingSections.has(section.section_index)}
               initialVersion={section.version}
               initialVersions={section.versions}
               onToggleEdit={() =>
@@ -583,6 +591,7 @@ export function WebRenderingPanel({
                   annotations
                 )
               }
+              onRerun={() => handleRerunSection(section.section_index)}
               onSectionUpdated={(updatedSection, newVersion, newVersions) => {
                 setSections((prev) =>
                   prev.map((s) =>

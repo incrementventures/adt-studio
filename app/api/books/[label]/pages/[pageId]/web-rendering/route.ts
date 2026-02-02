@@ -29,7 +29,8 @@ export async function POST(
     );
   }
 
-  if (!getPageSectioning(label, pageId)) {
+  const sectioning = getPageSectioning(label, pageId);
+  if (!sectioning) {
     return NextResponse.json(
       { error: "No page sectioning found — run sectioning first" },
       { status: 404 }
@@ -43,6 +44,28 @@ export async function POST(
     );
   }
 
-  const jobId = queue.enqueue("web-rendering", label, { pageId });
-  return NextResponse.json({ jobId });
+  // Enqueue one job per non-pruned section so they run in parallel
+  const jobIds: string[] = [];
+  for (let si = 0; si < sectioning.sections.length; si++) {
+    const section = sectioning.sections[si];
+    if (section.is_pruned) continue;
+
+    // Check that the section has content (part_ids with texts or images)
+    if (!section.part_ids || section.part_ids.length === 0) continue;
+
+    const jobId = queue.enqueue("web-rendering-section", label, {
+      pageId,
+      sectionIndex: si,
+    });
+    jobIds.push(jobId);
+  }
+
+  if (jobIds.length === 0) {
+    return NextResponse.json(
+      { error: "No renderable sections found" },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({ jobIds });
 }

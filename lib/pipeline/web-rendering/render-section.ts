@@ -35,6 +35,7 @@ export async function renderSection(options: {
   images: RenderSectionImage[];
   promptName: string;
   maxRetries?: number;
+  skipCache?: boolean;
 }): Promise<SectionRendering> {
   const allowedTextIds = options.texts.map((t) => t.text_id);
   const allowedImageIds = options.images.map((img) => img.image_id);
@@ -58,6 +59,7 @@ export async function renderSection(options: {
     validate: (result) =>
       validateSectionHtml(result.content, allowedTextIds, allowedImageIds),
     maxRetries: options.maxRetries ?? 2,
+    skipCache: options.skipCache,
   });
 
   return {

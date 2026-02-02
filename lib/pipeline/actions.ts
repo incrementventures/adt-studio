@@ -21,10 +21,10 @@ import {
   getPage,
   getWebRenderingVersion,
   listWebRenderingVersions,
+  listImageClassificationVersions,
   putNodeData,
   resetNodeVersions,
 } from "@/lib/books";
-import { getDb } from "@/lib/db";
 import {
   loadBookConfig,
   getImageFilters,
@@ -117,7 +117,8 @@ export interface WebRenderingResult {
 export async function runWebRendering(
   label: string,
   pageId: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  options?: { skipCache?: boolean }
 ): Promise<WebRenderingResult> {
   const { config, ctx } = resolveCtx(label);
   const model = resolveModel(ctx, config.web_rendering?.model);
@@ -161,12 +162,15 @@ export async function runWebRendering(
       images,
       promptName,
       maxRetries: config.web_rendering?.max_retries ?? 2,
+      skipCache: options?.skipCache,
     });
 
     sectionRenderings.push(rendering);
 
     const sectionId = `${pageId}_s${String(si).padStart(3, "0")}`;
-    putNodeData(label, "web-rendering", sectionId, 1, rendering);
+    const existingVersions = listWebRenderingVersions(label, sectionId);
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+    putNodeData(label, "web-rendering", sectionId, nextVersion, rendering);
   }
 
   // Stub if all sections pruned/empty
@@ -178,27 +182,88 @@ export async function runWebRendering(
       reasoning: "All sections on this page are pruned — nothing to render.",
     };
     sectionRenderings.push(stub);
-    putNodeData(label, "web-rendering", `${pageId}_s000`, 1, stub);
-  }
-
-  // Clean up old versions for all sections of this page
-  const db = getDb(label);
-  const existingSections = db
-    .prepare(
-      `SELECT DISTINCT item_id FROM node_data
-       WHERE node = 'web-rendering' AND item_id LIKE ? || '_s%'`
-    )
-    .all(pageId) as { item_id: string }[];
-  for (const row of existingSections) {
-    resetNodeVersions(label, "web-rendering", row.item_id);
+    const stubId = `${pageId}_s000`;
+    const stubVersions = listWebRenderingVersions(label, stubId);
+    const stubNextVersion = stubVersions.length > 0 ? Math.max(...stubVersions) + 1 : 1;
+    putNodeData(label, "web-rendering", stubId, stubNextVersion, stub);
   }
 
   return {
-    sections: sectionRenderings.map((s) => ({
-      ...s,
-      version: 1,
-      versions: [1],
-    })),
+    sections: sectionRenderings.map((s) => {
+      const sectionId = `${pageId}_s${String(s.section_index).padStart(3, "0")}`;
+      const versions = listWebRenderingVersions(label, sectionId);
+      const version = versions.length > 0 ? Math.max(...versions) : 1;
+      return { ...s, version, versions };
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Web rendering — render a single section for one page
+// ---------------------------------------------------------------------------
+
+export async function runWebRenderingSection(
+  label: string,
+  pageId: string,
+  sectionIndex: number,
+  onProgress?: (message: string) => void,
+  options?: { skipCache?: boolean }
+): Promise<WebEditResult> {
+  const { config, ctx } = resolveCtx(label);
+  const model = resolveModel(ctx, config.web_rendering?.model);
+
+  const pageImagePath = resolvePageImagePath(label, pageId);
+  const pageImageBase64 = fs.readFileSync(pageImagePath).toString("base64");
+
+  const sectioning = getPageSectioning(label, pageId);
+  if (!sectioning) throw new Error("No page sectioning found");
+
+  const section = sectioning.sections[sectionIndex];
+  if (!section) throw new Error(`Section ${sectionIndex} not found`);
+  if (section.is_pruned) throw new Error(`Section ${sectionIndex} is pruned`);
+
+  const { textLookup, imageMap } = buildTextLookup(label, pageId);
+
+  const texts: RenderSectionText[] = [];
+  const images: RenderSectionImage[] = [];
+  for (const partId of section.part_ids) {
+    const groupTexts = textLookup.get(partId);
+    if (groupTexts) texts.push(...groupTexts);
+    const imgBase64 = imageMap.get(partId);
+    if (imgBase64) images.push({ image_id: partId, image_base64: imgBase64 });
+  }
+
+  if (texts.length === 0 && images.length === 0) {
+    throw new Error(`Section ${sectionIndex} has no texts or images`);
+  }
+
+  const promptName = config.web_rendering?.prompt ?? "web_generation_html";
+
+  onProgress?.(`Rendering section ${sectionIndex + 1}/${sectioning.sections.length}`);
+
+  const rendering = await renderSection({
+    label,
+    pageId,
+    model,
+    pageImageBase64,
+    sectionIndex,
+    sectionType: section.section_type,
+    texts,
+    images,
+    promptName,
+    maxRetries: config.web_rendering?.max_retries ?? 2,
+    skipCache: options?.skipCache,
+  });
+
+  const sectionId = `${pageId}_s${String(sectionIndex).padStart(3, "0")}`;
+  const existingVersions = listWebRenderingVersions(label, sectionId);
+  const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+  putNodeData(label, "web-rendering", sectionId, nextVersion, rendering);
+
+  return {
+    section: rendering,
+    version: nextVersion,
+    versions: listWebRenderingVersions(label, sectionId),
   };
 }
 
@@ -459,10 +524,9 @@ export function runImageClassification(label: string, pageId: string) {
     });
   }
 
-  putNodeData(label, "image-classification", pageId, 1, classification);
-
-  // Reset version tracking
-  resetNodeVersions(label, "image-classification", pageId);
+  const existingVersions = listImageClassificationVersions(label, pageId);
+  const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+  putNodeData(label, "image-classification", pageId, nextVersion, classification);
 
   return classification;
 }

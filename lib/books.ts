@@ -171,6 +171,21 @@ export function getMaxImageNum(label: string, pageId: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
+export function getImageHashes(
+  label: string,
+  pageId: string
+): Record<string, string> {
+  const db = getDb(label);
+  const rows = db
+    .prepare(
+      "SELECT image_id, hash FROM images WHERE page_id = ? AND hash IS NOT NULL"
+    )
+    .all(pageId) as { image_id: string; hash: string }[];
+  const map: Record<string, string> = {};
+  for (const r of rows) map[r.image_id] = r.hash;
+  return map;
+}
+
 export function getImageByHash(label: string, hash: string): string | null {
   const db = getDb(label);
   const row = db
