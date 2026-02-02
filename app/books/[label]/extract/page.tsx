@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { listPages } from "@/lib/books";
 import { LightboxImage } from "./image-lightbox";
 
@@ -19,12 +18,9 @@ export default async function ExtractPage({
             id={page.pageId}
             className="scroll-mt-16 overflow-hidden rounded-lg border border-border"
           >
-            <Link
-              href={`/books/${label}/pages/${page.pageId}`}
-              className="block bg-slate-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-500 transition-colors"
-            >
+            <div className="bg-slate-600 px-4 py-2.5 text-sm font-semibold text-white">
               Page {i + 1}
-            </Link>
+            </div>
 
             <div className="grid gap-6 p-4 lg:grid-cols-[280px_1fr]">
               <LightboxImage
