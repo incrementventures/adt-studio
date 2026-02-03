@@ -6,9 +6,21 @@ ADT Studio converts PDFs of learning materials (textbooks, storybooks, etc.) int
 
 ## Architecture
 
-The app is a Next.js application backed by per-book SQLite databases. Books are processed through a six-stage pipeline that combines PDF rasterization, rule-based image filtering, and LLM-powered extraction.
+The app is a Next.js application backed by per-book SQLite databases. Books are processed through a six-stage pipeline built on pure functions with a runner layer for orchestration.
 
-### Pipeline stages
+### Pipeline Architecture
+
+The pipeline follows a layered architecture:
+
+1. **Pure Steps** (`lib/pipeline/steps/`) — Pure TypeScript functions that take typed inputs and return typed outputs. No side effects, no storage knowledge.
+
+2. **Core** (`lib/pipeline/core/`) — Shared types, schemas, and LLM utilities with transparent caching.
+
+3. **Runner** (`lib/pipeline/runner/`) — Orchestration layer that wires pure steps to storage and progress tracking.
+
+4. **Actions** (`lib/pipeline/actions.ts`) — Thin wrappers for API routes and queue executors.
+
+### Pipeline Stages
 
 1. **Extract** — Rasterizes each PDF page to PNG via MuPDF, extracts embedded images and OCR text. No LLM required.
 2. **Metadata** — Sends the first few pages to an LLM to extract title, authors, language, cover page, etc.
@@ -41,7 +53,6 @@ All images live in a single flat `images/` directory per book. Page renders are 
 - **MuPDF** for PDF rasterization and text extraction
 - **sharp** for image cropping
 - **better-sqlite3** for per-book storage
-- **RxJS** for the pipeline computation graph and progress streaming
 - **LiquidJS** for prompt templates with custom `{% chat %}` / `{% image %}` tags
 
 ## Quick start
@@ -69,15 +80,29 @@ Open http://localhost:3000 and upload a PDF. The pipeline runs automatically —
 
 ### CLI
 
-Pipeline stages can also be run from the command line:
+The pipeline can be run from the command line with parallel processing:
 
 ```bash
-pnpm pipeline extract <pdf_path>
-pnpm pipeline metadata <label> [--provider openai|anthropic|google]
-pnpm pipeline image-classification <label>
-pnpm pipeline text-classification <label> [--provider openai|anthropic|google]
-pnpm pipeline page-sectioning <label> [--provider openai|anthropic|google]
+# Run full pipeline (extract + metadata + all pages)
+pnpm pipeline run <label> <pdf_path>
+
+# Process all pages for an existing book
+pnpm pipeline pages <label>
+
+# Process a single page
+pnpm pipeline page <label> <page_id>
+
+# Extract metadata only
+pnpm pipeline metadata <label>
 ```
+
+Options:
+- `--start-page <n>` — Start at page N (for run command)
+- `--end-page <n>` — End at page N (for run command)
+- `--concurrency <n>` — Max parallel page processing (default: 16)
+- `--skip-cache` — Skip LLM cache
+
+The CLI displays dynamic progress with animated spinners and a progress bar showing parallel task execution.
 
 ## Configuration
 
@@ -97,8 +122,6 @@ Other test commands:
 
 ```bash
 pnpm test:watch         # Watch mode
-pnpm test:integration   # Metadata + text-classification integration tests only
-pnpm test:recache       # Re-run LLM calls (ignores cache, requires API key)
 pnpm test:coverage      # Coverage report
 ```
 

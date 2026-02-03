@@ -208,13 +208,13 @@ export function LlmLogViewer({
                     </td>
                     <td className="px-2 py-1.5">
                       <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-200">
-                        {entry.taskType}
+                        {entry.taskType ?? "—"}
                       </span>
                     </td>
                     <td className="px-2 py-1.5 font-mono">
                       {entry.pageId ?? "—"}
                     </td>
-                    <td className="px-2 py-1.5">{entry.promptName}</td>
+                    <td className="px-2 py-1.5">{entry.promptName ?? "—"}</td>
                     <td className="px-2 py-1.5 text-faint">{entry.modelId}</td>
                     <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-faint">
                       {entry.usage
@@ -301,6 +301,8 @@ function ImagePart({
 }
 
 function ExpandedDetail({ label, entry }: { label: string; entry: LlmLogEntry }) {
+  const messages = entry.messages ?? [];
+
   return (
     <div className="space-y-3 text-xs">
       {entry.system && (
@@ -313,11 +315,11 @@ function ExpandedDetail({ label, entry }: { label: string; entry: LlmLogEntry })
       )}
 
 
-      {entry.messages.length > 0 && (
+      {messages.length > 0 && (
         <div>
           <h4 className="mb-1 font-semibold text-faint">Messages</h4>
           <div className="space-y-2">
-            {entry.messages.map((msg, i) => (
+            {messages.map((msg, i) => (
               <div key={i}>
                 <span className="inline-block rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">
                   {msg.role}

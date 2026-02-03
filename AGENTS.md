@@ -8,66 +8,156 @@ ADT Studio converts PDFs of learning materials (textbooks, storybooks, etc.) int
 
 ### Pipeline
 
-- The core conversion is a **computation graph** of `Node<T>` values, orchestrated with **RxJS**.
-- Each node declares its dependencies by calling `resolveNode()` on upstream nodes.
-- Nodes read from and write to **static files on disk**, organized by book label.
-- The pipeline and all logic around it must be **runnable from the command line** independent of the UI.
-- Pipeline code lives separately from the Next.js app so it can be invoked via CLI without a browser.
+The pipeline is built on **pure functions** with a **runner layer** for orchestration:
 
-#### Node pattern (`lib/pipeline/node.ts`)
-
-Every pipeline step is a `Node<T>` created with `defineNode()`:
-
-```ts
-export const myNode: Node<OutputType> = defineNode<OutputType | ProgressType>({
-  name: "my-node",
-  isComplete: (ctx) => {
-    // Return cached result from disk if already done, or null to run resolve()
-  },
-  resolve: (ctx) => {
-    return new Observable<OutputType | ProgressType>((subscriber) => {
-      (async () => {
-        // 1. Resolve upstream dependencies
-        const pages = await resolveNode(pagesNode, ctx);
-
-        // 2. Do work, emitting progress events along the way
-        subscriber.next({ phase: "working", label: ctx.label });
-
-        // 3. Write results to disk
-        // 4. Emit final value and complete
-        subscriber.next(result);
-        subscriber.complete();
-      })();
-    });
-  },
-}) as Node<OutputType>;
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        API Routes                           │
+│                     Queue Executors                         │
+├─────────────────────────────────────────────────────────────┤
+│                   Actions (thin wrappers)                   │
+│                   lib/pipeline/actions.ts                   │
+├─────────────────────────────────────────────────────────────┤
+│                    Runner Layer                             │
+│                 lib/pipeline/runner/                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ Storage  │  │ Progress │  │  Factory │  │ Runners  │   │
+│  │ Adapter  │  │ Emitter  │  │          │  │          │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│                     Pure Steps                              │
+│                  lib/pipeline/steps/                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ Extract  │  │ Metadata │  │ Classify │  │ Render   │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│                       Core                                  │
+│                  lib/pipeline/core/                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
+│  │  Types   │  │ Schemas  │  │   LLM    │                 │
+│  └──────────┘  └──────────┘  └──────────┘                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Key properties:
-- **`isComplete`** — checks disk for existing output; returns the cached value or `null` to trigger `resolve()`.
-- **`resolve`** — returns an `Observable` that emits progress events and a final result. Dependencies are pulled lazily via `resolveNode(upstreamNode, ctx)`.
-- **Caching** — `defineNode` wraps the observable with `shareReplay` and stores it on `ctx.cache`, so multiple downstream consumers share one execution.
-- **Progress + result union** — nodes emit both progress objects (for UI/CLI feedback) and a final typed result on the same observable. The convention is `defineNode<Result | Progress>` with a cast to `Node<Result>`.
-- **CLI wrapper** — each module exports a convenience function (e.g., `extract()`, `extractMetadata()`, `classifyText()`) that creates a `PipelineContext`, resolves the node, and re-emits only the progress events for CLI consumers.
+#### Pure Steps (`lib/pipeline/steps/`)
+
+Each pipeline step is a **pure function** that:
+- Takes typed inputs (data, not file paths)
+- Returns typed outputs
+- Has no side effects (no file I/O, no database access)
+- Receives LLM model as a parameter (if needed)
+
+```ts
+// Example: Text classification step
+export async function classifyText(input: ClassifyTextInput): Promise<TextClassificationOutput> {
+  const { page, pageImage, language, textTypes, model, promptName } = input;
+
+  // Load prompt template
+  const prompt = await loadPrompt(promptName, { page, textTypes, language });
+
+  // Call LLM (model is injected, not created here)
+  const result = await model.generateObject({ prompt, schema });
+
+  return result;
+}
+```
+
+Exception: `extractPdf` reads from a buffer but returns data for the caller to persist — it doesn't write to storage itself.
+
+#### Core (`lib/pipeline/core/`)
+
+Shared infrastructure:
+- **Types** — `Page`, `PageImage`, `LLMModel`, etc.
+- **Schemas** — Zod schemas for all pipeline outputs
+- **LLM** — Model creation, prompt loading with LiquidJS
+
+#### Runner Layer (`lib/pipeline/runner/`)
+
+Orchestrates pure steps with storage and progress:
+
+```ts
+// Create a runner for a book
+const runner = createPageRunner({
+  label: "my-book",
+  progress: createConsoleProgress(),
+  skipCache: false,
+});
+
+// Run the full page pipeline
+await runPagePipeline("pg001", runner);
+
+// Or run individual steps
+await runTextClassification("pg001", runner);
+await runPageSectioning("pg001", runner);
+await runWebRendering("pg001", runner);
+```
+
+Key components:
+- **Storage Adapter** — Reads/writes to SQLite and filesystem
+- **Progress Emitter** — Reports step progress via callbacks
+- **Factory** — Creates runners from config
+- **Book Runner** — Runs extract + metadata + all pages
+- **Page Runner** — Runs classification + sectioning + rendering for one page
+
+#### Actions (`lib/pipeline/actions.ts`)
+
+Thin wrappers that create runners and call pure steps. Used by API routes and queue executors:
+
+```ts
+export async function runTextClassification(
+  label: string,
+  pageId: string,
+  options?: { skipCache?: boolean }
+): Promise<TextClassificationResult> {
+  const runner = createRunner(label, { skipCache: options?.skipCache });
+  return runTextClassificationImpl(pageId, runner);
+}
+```
 
 ### Storage
 
-- All pipeline artifacts (intermediate and final) are stored as **static files**.
+- All pipeline artifacts are stored in **SQLite databases** (one per book) and **image files**.
 - Files are organized by book label (e.g., `books/<label>/`).
-- Each pipeline step produces output files that subsequent steps consume.
+- The `Storage` interface abstracts all I/O so pure steps don't know about files.
 
 ### UI
 
 - **Next.js** app for editing and monitoring pipelines.
 - The UI is a frontend to the same pipeline logic — it does not contain business logic itself.
-- The UI calls into shared pipeline code; it never reimplements pipeline steps.
+- The UI calls into shared pipeline code via API routes; it never reimplements pipeline steps.
 
 ## Tech Stack
 
 - **TypeScript** throughout
 - **Next.js** (App Router) for the UI
-- **RxJS** for the Node computation graph (caching, progress streaming, lazy resolution)
+- **Vercel AI SDK** for LLM calls
 - **pnpm** for package management
+
+## CLI
+
+The pipeline can be run from the command line with parallel processing:
+
+```bash
+# Run full pipeline (extract + metadata + all pages)
+pnpm pipeline run <label> <pdf_path>
+
+# Process all pages for an existing book
+pnpm pipeline pages <label>
+
+# Process a single page
+pnpm pipeline page <label> <page_id>
+
+# Extract metadata only
+pnpm pipeline metadata <label>
+```
+
+Options:
+- `--start-page <n>` — Start at page N
+- `--end-page <n>` — End at page N
+- `--concurrency <n>` — Max parallel page processing (default: 16)
+- `--skip-cache` — Skip LLM cache
+
+The CLI displays dynamic progress with animated spinners and a progress bar showing parallel task execution.
 
 ## Testing
 
@@ -76,67 +166,62 @@ Key properties:
 - Use `assets/raven.pdf` as the sample PDF for any tests that need to do PDF extraction.
 - Tests should be colocated or in a parallel `__tests__` directory structure.
 
-## Pipeline Nodes
+## Pipeline Steps
 
-### `pagesNode` (`lib/pipeline/extract/extract.ts`)
+### Extract (`lib/pipeline/steps/extract.ts`)
 
-Extracts all content from a PDF into a structured directory.
+Extracts all content from a PDF buffer.
 
-**Depends on:** nothing (root node)
-**Input:** PDF file path (from `config.pdf_path`)
-**Output:** `books/<label>/extract/pages/<pgNNN>/` with:
-- `page.png` — full-page raster render (2x scale)
-- `text.txt` — extracted text
-- `images/` — embedded raster images (pgNNN_imNNN.png)
+**Input:** `{ pdfBuffer, startPage?, endPage? }`
+**Output:** `{ pages: ExtractedPage[], pdfMetadata, totalPagesInPdf }`
 
-**Label** is derived by slugging the PDF filename (without extension): `My Book.pdf` → `my-book`.
+Each `ExtractedPage` contains:
+- `pageId` — e.g., `pg001`
+- `pageNumber` — 1-indexed
+- `text` — Extracted text
+- `pageImage` — PNG buffer of full page render
+- `images` — Embedded raster images
 
-**CLI:** `pnpm pipeline extract <pdf_path>`
+### Metadata (`lib/pipeline/steps/metadata.ts`)
 
-### `metadataNode` (`lib/pipeline/metadata/metadata.ts`)
+Extracts book metadata from the first few pages.
 
-Sends the first pages of an extracted book to an LLM and writes structured metadata.
+**Input:** `{ pages, pageImages, model, promptName }`
+**Output:** `BookMetadata` with title, authors, language, cover page, etc.
 
-**Depends on:** `pagesNode`
-**Output:** `books/<label>/metadata/metadata.json` with:
-- `title` — book title (string | null)
-- `authors` — list of author names
-- `publisher` — publisher name (string | null)
-- `language_code` — ISO 639-1 code (string | null)
-- `cover_page_number` — page number of the front cover (int | null)
-- `reasoning` — explanation of extraction decisions
+### Image Classification (`lib/pipeline/steps/image-classification.ts`)
 
-**CLI:** `pnpm pipeline metadata <label> [--provider openai|anthropic|google]`
+Rule-based filtering by dimensions.
 
-### `textClassificationNode` (`lib/pipeline/text-classification/text-classification.ts`)
+**Input:** `{ page }`
+**Output:** `{ classifications }` — Maps image IDs to `{ is_pruned, pruning_reason }`
 
-Sends each page image to an LLM to extract structured text groups with reading order and type annotations.
+### Text Classification (`lib/pipeline/steps/text-classification.ts`)
 
-**Depends on:** `pagesNode`, `metadataNode`
-**Output:** `books/<label>/text-classification/<pgNNN>.json` — one JSON file per page with text groups, reading order, and type labels.
+LLM classifies page text into typed groups.
 
-**CLI:** `pnpm pipeline text-classification <label> [--provider openai|anthropic|google]`
+**Input:** `{ page, pageImage, language, textTypes, model, promptName }`
+**Output:** `TextClassificationOutput` with ordered text groups
 
-### `sectionsNode` (`lib/pipeline/page-sectioning/page-sectioning.ts`)
+### Page Sectioning (`lib/pipeline/steps/page-sectioning.ts`)
 
-Groups text extraction results into semantic sections (e.g., "main body", "sidebar", "activity") per page, using configurable `section_types` from `config.yaml`.
+LLM groups text and images into semantic sections.
 
-**Depends on:** `pagesNode`, `textClassificationNode`
-**Output:** `books/<label>/page-sectioning/<pgNNN>.json` — one JSON file per page with section assignments for each text group.
+**Input:** `{ page, textClassification, imageClassification, sectionTypes, model, promptName }`
+**Output:** `PageSectioningOutput` with section assignments
 
-**CLI:** `pnpm pipeline page-sectioning <label> [--provider openai|anthropic|google]`
+### Web Rendering (`lib/pipeline/steps/web-rendering.ts`)
 
-## Reference Repo: adt-press
+LLM renders sections as HTML.
 
-The symlink `adt-press` in the project root points to a sibling Python project (Hamilton-based) that implements the same pipeline. Use it as inspiration when implementing our TypeScript version, but:
-
-- **Never create dependencies** on adt-press (no imports, no shared modules, no runtime references).
-- Prompts in `adt-press/prompts/` can be copied into this repo if needed.
+**Input:** `{ section, texts, images, model, promptName }`
+**Output:** `SectionRendering` with HTML, CSS, and metadata
 
 ## Conventions
 
-- **DRY: Never duplicate logic between pipeline nodes and API routes.** If an API route needs the same transformation a pipeline node performs, extract a shared helper into the relevant schema or utility module and call it from both places. The API route for single-page sectioning and the `sectionsNode` pipeline node must use the same code path — not parallel implementations.
+- **DRY: Never duplicate logic between pipeline steps and API routes.** If an API route needs the same transformation a pipeline step performs, extract a shared helper and call it from both places.
 - Keep pipeline logic CLI-first. The UI is a convenience layer, not the source of truth.
 - All pipeline steps are invoked via `pnpm pipeline <command>`. Run `pnpm pipeline` with no args for usage.
 - Book data is addressed by label. Labels are URL-safe strings.
-- Prefer static files over databases. No database.
+- **Pure functions over side effects.** Pipeline steps should be deterministic given the same inputs.
+- **Dependency injection.** LLM models and storage are passed in, not created inside steps.

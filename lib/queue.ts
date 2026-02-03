@@ -1,5 +1,9 @@
-import { extractMetadata } from "@/lib/pipeline/metadata/metadata";
-import { getBookMetadata, listPages } from "@/lib/books";
+import { listPages } from "@/lib/books";
+import {
+  createPageRunner,
+  runMetadataExtraction,
+  createCallbackProgress,
+} from "@/lib/pipeline/runner";
 import {
   runWebRendering,
   runWebRenderingSection,
@@ -197,34 +201,27 @@ globalForExecutors.__getJobExecutor = getExecutor;
 
 // --- Executors ---
 
-const metadataExecutor: JobExecutor = (job, update) => {
-  return new Promise<void>((resolve, reject) => {
-    const obs = extractMetadata(job.label);
-    obs.subscribe({
-      next(progress) {
-        update({ progress: progress.phase });
-      },
-      error(err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      },
-      complete() {
-        const metadata = getBookMetadata(job.label);
-        update({
-          result: metadata,
-          status: "completed",
-          completedAt: Date.now(),
-        });
+const metadataExecutor: JobExecutor = async (job, update) => {
+  update({ progress: "Loading pages" });
 
-        // Enqueue page-pipeline jobs for every page in the book
-        const pages = listPages(job.label);
-        for (const page of pages) {
-          queue.enqueue("page-pipeline", job.label, { pageId: page.pageId });
-        }
-
-        resolve();
-      },
-    });
+  const runner = createPageRunner({
+    label: job.label,
+    progress: createCallbackProgress((msg) => update({ progress: msg })),
   });
+
+  const metadata = await runMetadataExtraction(runner);
+
+  update({
+    result: metadata,
+    status: "completed",
+    completedAt: Date.now(),
+  });
+
+  // Enqueue page-pipeline jobs for every page in the book
+  const pages = listPages(job.label);
+  for (const page of pages) {
+    queue.enqueue("page-pipeline", job.label, { pageId: page.pageId });
+  }
 };
 
 const webRenderingExecutor: JobExecutor = async (job, update) => {
@@ -256,7 +253,7 @@ const webEditExecutor: JobExecutor = async (job, update) => {
 
 const imageClassificationExecutor: JobExecutor = async (job, update) => {
   const pageId = job.params?.pageId as string;
-  const result = runImageClassification(job.label, pageId);
+  const result = await runImageClassification(job.label, pageId);
   update({ result, status: "completed", completedAt: Date.now() });
 };
 

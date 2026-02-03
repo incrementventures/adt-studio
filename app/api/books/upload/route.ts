@@ -3,7 +3,7 @@ import path from "node:path";
 import yaml from "js-yaml";
 import { getBooksRoot, putBookMetadata } from "@/lib/books";
 import { getDb } from "@/lib/db";
-import { extract } from "@/lib/pipeline/extract/extract";
+import { runExtract, createBookStorage, nullProgress } from "@/lib/pipeline/runner";
 import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -44,19 +44,19 @@ export async function POST(request: Request) {
   const startPage =
     typeof startPageRaw === "string" && startPageRaw
       ? parseInt(startPageRaw, 10)
-      : null;
+      : undefined;
   const endPage =
     typeof endPageRaw === "string" && endPageRaw
       ? parseInt(endPageRaw, 10)
-      : null;
+      : undefined;
 
-  if (startPage !== null && (!Number.isInteger(startPage) || startPage < 1)) {
+  if (startPage !== undefined && (!Number.isInteger(startPage) || startPage < 1)) {
     return new Response(
       JSON.stringify({ error: "start_page must be a positive integer" }),
       { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
-  if (endPage !== null && (!Number.isInteger(endPage) || endPage < 1)) {
+  if (endPage !== undefined && (!Number.isInteger(endPage) || endPage < 1)) {
     return new Response(
       JSON.stringify({ error: "end_page must be a positive integer" }),
       { status: 400, headers: { "Content-Type": "application/json" } }
@@ -73,8 +73,8 @@ export async function POST(request: Request) {
   const bookConfig: Record<string, unknown> = {
     pdf_path: `${label}.pdf`,
   };
-  if (startPage !== null) bookConfig.start_page = startPage;
-  if (endPage !== null) bookConfig.end_page = endPage;
+  if (startPage !== undefined) bookConfig.start_page = startPage;
+  if (endPage !== undefined) bookConfig.end_page = endPage;
   fs.writeFileSync(path.join(bookDir, "config.yaml"), yaml.dump(bookConfig));
 
   // Ensure DB exists
@@ -87,20 +87,26 @@ export async function POST(request: Request) {
   const write = (obj: object) =>
     writer.write(encoder.encode(JSON.stringify(obj) + "\n"));
 
-  const progress$ = extract(pdfPath, booksRoot, {
-    startPage: startPage ?? undefined,
-    endPage: endPage ?? undefined,
-  });
+  // Run extraction asynchronously
+  (async () => {
+    try {
+      const storage = createBookStorage(label);
 
-  progress$.subscribe({
-    next(p) {
-      write(p);
-    },
-    error(err) {
-      write({ error: String(err) });
-      writer.close();
-    },
-    complete() {
+      // Create a progress emitter that writes to the stream
+      const streamProgress = {
+        emit(event: { type: string; page?: number; totalPages?: number; message?: string }) {
+          if (event.type === "book-step-progress" && event.page !== undefined) {
+            write({ page: event.page, totalPages: event.totalPages });
+          }
+        },
+      };
+
+      const result = await runExtract(
+        { pdfPath, startPage, endPage },
+        storage,
+        streamProgress
+      );
+
       // Write stub metadata to DB so the book appears in listBooks().
       const title = path.basename(file.name, ".pdf");
       putBookMetadata(label, "stub", {
@@ -111,11 +117,15 @@ export async function POST(request: Request) {
         cover_page_number: 1,
         reasoning: "Auto-generated stub from PDF upload",
       });
+
       const jobId = queue.enqueue("metadata", label);
-      write({ done: true, label, jobId });
+      write({ done: true, label, jobId, totalPages: result.totalPagesInPdf });
+    } catch (err) {
+      write({ error: String(err) });
+    } finally {
       writer.close();
-    },
-  });
+    }
+  })();
 
   return new Response(readable, {
     headers: {

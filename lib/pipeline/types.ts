@@ -31,5 +31,3 @@ export function resolveBookPaths(
     webRenderingDir,
   };
 }
-
-export type { LLMProvider } from "./node";

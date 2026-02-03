@@ -3,7 +3,7 @@ import path from "node:path";
 import { getDb } from "./db";
 import { resolveBookPaths } from "./pipeline/types";
 import { bookMetadataSchema, type BookMetadata } from "./pipeline/metadata/metadata-schema";
-import type { PdfMetadata } from "./pipeline/extract/extract";
+import type { PdfMetadata } from "./pipeline/runner";
 import type { PageSectioning } from "./pipeline/page-sectioning/page-sectioning-schema";
 import type { PageImageClassification } from "./pipeline/image-classification/image-classification-schema";
 import type { SectionRendering, WebRendering } from "./pipeline/web-rendering/web-rendering-schema";

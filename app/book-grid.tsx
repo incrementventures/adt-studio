@@ -37,7 +37,7 @@ export default function BookGrid({ books }: { books: BookSummary[] }) {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Books</h1>
-        <AddBookDialog existingLabels={existingLabels} />
+        <AddBookDialog existingLabels={existingLabels} autoOpen={books.length === 0} />
       </div>
 
       {books.length === 0 ? (
