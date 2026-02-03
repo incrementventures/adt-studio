@@ -4,7 +4,7 @@ import {
   getWebRenderingVersion,
 } from "@/lib/books";
 import { queue } from "@/lib/queue";
-import type { Annotation } from "@/lib/pipeline/web-rendering/edit-section";
+import type { Annotation } from "@/lib/pipeline/actions";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 const PAGE_RE = /^pg\d{3}$/;

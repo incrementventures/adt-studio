@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { dialogStyles } from "./ui/dialog-styles";
 
@@ -14,8 +14,10 @@ function slugify(s: string): string {
 
 export default function AddBookDialog({
   existingLabels,
+  autoOpen = false,
 }: {
   existingLabels: Set<string>;
+  autoOpen?: boolean;
 }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -43,6 +45,14 @@ export default function AddBookDialog({
     if (fileRef.current) fileRef.current.value = "";
     dialogRef.current?.showModal();
   }
+
+  // Auto-open dialog when autoOpen prop is true
+  useEffect(() => {
+    if (autoOpen) {
+      open();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function acceptFile(file: File) {
     if (!file.name.toLowerCase().endsWith(".pdf")) return;
@@ -290,30 +300,31 @@ export default function AddBookDialog({
             </p>
           )}
 
-          {/* Progress */}
-          {uploading && (
-            <div className="mt-5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">{progress}</span>
-                {extractTotal > 0 && (
-                  <span className="tabular-nums text-muted">{pct}%</span>
-                )}
+          {/* Progress/Error area - always rendered to prevent layout shift */}
+          <div className="mt-5">
+            {!uploading && progress ? (
+              /* Error state */
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-sm text-red-600">{progress}</p>
               </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-bright">
-                <div
-                  className="h-full rounded-full bg-foreground transition-all duration-300 ease-out"
-                  style={{ width: `${pct}%` }}
-                />
+            ) : (
+              /* Progress state (visible when uploading, invisible otherwise) */
+              <div className={uploading ? "" : "invisible"}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-foreground">{progress || "\u00A0"}</span>
+                  {extractTotal > 0 && (
+                    <span className="tabular-nums text-muted">{pct}%</span>
+                  )}
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-bright">
+                  <div
+                    className="h-full rounded-full bg-foreground transition-all duration-300 ease-out"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Error (non-uploading) */}
-          {!uploading && progress && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-              <p className="text-sm text-red-600">{progress}</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Footer */}

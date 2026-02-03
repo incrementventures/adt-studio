@@ -8,7 +8,7 @@ import {
   useImperativeHandle,
   forwardRef,
 } from "react";
-import type { Annotation } from "@/lib/pipeline/web-rendering/edit-section";
+import type { Annotation } from "@/lib/pipeline/actions";
 
 export interface SectionAnnotationEditorHandle {
   submit: () => void;

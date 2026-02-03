@@ -4,7 +4,7 @@ import { getBooksRoot, putBookMetadata } from "@/lib/books";
 import { closeDb, getDb } from "@/lib/db";
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import { loadBookConfig } from "@/lib/config";
-import { extract } from "@/lib/pipeline/extract/extract";
+import { runExtract, createBookStorage } from "@/lib/pipeline/runner";
 import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
@@ -91,17 +91,27 @@ export async function POST(
   const write = (obj: object) =>
     writer.write(encoder.encode(JSON.stringify(obj) + "\n"));
 
-  const progress$ = extract(pdfPath, booksRoot, { startPage, endPage });
+  // Run extraction asynchronously
+  (async () => {
+    try {
+      const storage = createBookStorage(label);
 
-  progress$.subscribe({
-    next(p) {
-      write(p);
-    },
-    error(err) {
-      write({ error: String(err) });
-      writer.close();
-    },
-    complete() {
+      // Create a progress emitter that writes to the stream
+      const streamProgress = {
+        emit(event: { type: string; page?: number; totalPages?: number; message?: string }) {
+          if (event.type === "book-step-progress" && event.page !== undefined) {
+            write({ page: event.page, totalPages: event.totalPages });
+          }
+        },
+      };
+
+      const result = await runExtract(
+        { pdfPath, startPage, endPage },
+        storage,
+        streamProgress
+      );
+
+      // Write stub metadata to DB so the book appears in listBooks().
       putBookMetadata(label, "stub", {
         title: label.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
         authors: [],
@@ -110,11 +120,15 @@ export async function POST(
         cover_page_number: 1,
         reasoning: "Auto-generated stub from reimport",
       });
+
       const jobId = queue.enqueue("metadata", label);
-      write({ done: true, label, jobId });
+      write({ done: true, label, jobId, totalPages: result.totalPagesInPdf });
+    } catch (err) {
+      write({ error: String(err) });
+    } finally {
       writer.close();
-    },
-  });
+    }
+  })();
 
   return new Response(readable, {
     headers: {

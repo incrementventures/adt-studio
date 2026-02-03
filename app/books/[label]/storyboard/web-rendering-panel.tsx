@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type { SectionRendering } from "@/lib/books";
-import type { Annotation } from "@/lib/pipeline/web-rendering/edit-section";
+import type { Annotation } from "@/lib/pipeline/actions";
 import {
   SectionAnnotationEditor,
   type SectionAnnotationEditorHandle,

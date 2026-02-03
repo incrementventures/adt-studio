@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { BookMetadata } from "@/lib/pipeline/metadata/metadata-schema";
-import type { PdfMetadata } from "@/lib/pipeline/extract/extract";
+import type { PdfMetadata } from "@/lib/pipeline/runner";
 
 const STUB_REASONING = "Auto-generated stub from PDF upload";
 
