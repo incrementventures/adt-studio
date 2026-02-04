@@ -191,19 +191,23 @@ export function createBookStorage(label: string): Storage {
 
     async getPageImages(pageId: string): Promise<PageImage[]> {
       // Get images from the latest image classification (includes crops)
+      // Fall back to extracted images if no classification exists yet
       const classification = getVersionedNodeData<LegacyImageClassification>(
         label,
         "image-classification",
         pageId
       );
 
-      if (!classification) {
-        return [];
-      }
+      const imageSources = classification
+        ? classification.data.images
+        : getExtractedImages(label, pageId).map((img) => ({
+            image_id: img.image_id,
+            path: img.path,
+          }));
 
       const result: PageImage[] = [];
 
-      for (const img of classification.data.images) {
+      for (const img of imageSources) {
         const absPath = path.join(paths.bookDir, img.path);
         if (!fs.existsSync(absPath)) continue;
 

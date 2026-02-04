@@ -52,10 +52,19 @@ describe("storage-adapter getPageImages", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns empty array when no image classification exists", async () => {
+  it("falls back to extracted images when no classification exists", async () => {
+    // First, we need to register the images in the DB as extracted
+    const db = (await import("@/lib/db")).getDb(label);
+    db.prepare(
+      "INSERT OR IGNORE INTO images (image_id, page_id, path, hash, width, height, source) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run("pg001_im001", pageId, "images/pg001_im001.png", "abc123", 1, 1, "extract");
+
     const storage = createBookStorage(label);
-    const images = await storage.getPageImages("pg999");
-    expect(images).toEqual([]);
+    const images = await storage.getPageImages(pageId);
+
+    // Should fall back to extracted images
+    expect(images.length).toBeGreaterThan(0);
+    expect(images.some((i) => i.imageId === "pg001_im001")).toBe(true);
   });
 
   it("returns images from image classification including crops", async () => {
