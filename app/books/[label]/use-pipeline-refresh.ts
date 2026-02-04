@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import React from "react";
+import { PROGRESS_PHASES } from "@/lib/pipeline/runner/types";
 
 /**
  * Wraps the storyboard page with a single SSE connection to the job queue.
@@ -24,15 +25,16 @@ import React from "react";
 
 // ---------------------------------------------------------------------------
 // Progress phases — ordered so we can compare ordinally
+// Uses PROGRESS_PHASES from runner/types.ts to stay in sync with pipeline
 // ---------------------------------------------------------------------------
 
 const PHASE_ORDER = [
   "queued",
-  "Classifying images",
-  "Classifying text",
-  "Sectioning page",
-  "Rendering web pages",
-  "rendering",        // any "Rendering section N/M"
+  PROGRESS_PHASES["image-classification"],
+  PROGRESS_PHASES["text-classification"],
+  PROGRESS_PHASES["page-sectioning"],
+  PROGRESS_PHASES["web-rendering"],
+  "rendering", // any "Rendered section N/M"
   "completed",
 ] as const;
 
@@ -42,12 +44,6 @@ function normalizePhase(progress: string | undefined, status: string): Phase {
   if (status === "queued") return "queued";
   if (status === "completed" || status === "failed") return "completed";
   if (!progress) return "queued";
-
-  // Handle "Starting X" and "Completed X" format from pipeline
-  if (progress.includes("image classification")) return "Classifying images";
-  if (progress.includes("text classification")) return "Classifying text";
-  if (progress.includes("page sectioning")) return "Sectioning page";
-  if (progress.includes("web rendering")) return "Rendering web pages";
   if (progress.startsWith("Rendered section")) return "rendering";
 
   const found = PHASE_ORDER.find((p) => p === progress);

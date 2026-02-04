@@ -120,6 +120,17 @@ export type PageStepName =
 
 export type StepName = BookStepName | PageStepName;
 
+/**
+ * Progress phase messages for UI display.
+ * These are the canonical strings used by both the pipeline and the UI.
+ */
+export const PROGRESS_PHASES = {
+  "image-classification": "Classifying images",
+  "text-classification": "Classifying text",
+  "page-sectioning": "Sectioning page",
+  "web-rendering": "Rendering web pages",
+} as const satisfies Record<PageStepName, string>;
+
 export type ProgressEvent =
   // Book-level events
   | { type: "book-step-start"; step: BookStepName }
@@ -218,15 +229,15 @@ export function createCallbackProgress(
         case "book-step-error":
           callback(`Error: ${event.error}`);
           break;
-        // Page-level events
+        // Page-level events - use PROGRESS_PHASES for UI consistency
         case "step-start":
-          callback(`Starting ${formatStepName(event.step)}`);
+          callback(PROGRESS_PHASES[event.step]);
           break;
         case "step-progress":
           callback(event.message);
           break;
         case "step-complete":
-          callback(`Completed ${formatStepName(event.step)}`);
+          callback(PROGRESS_PHASES[event.step]);
           break;
         case "step-error":
           callback(`Error: ${event.error}`);
