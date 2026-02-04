@@ -496,7 +496,7 @@ export async function runWebEdit(
     allowedTextIds,
     allowedImageIds,
     model,
-    promptName: prompts.sectionEdit ?? "web_edit",
+    promptName: prompts.sectionEdit ?? "web_edit_section",
     maxRetries: 2,
   });
 

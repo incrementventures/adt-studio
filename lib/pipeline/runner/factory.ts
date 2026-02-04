@@ -75,7 +75,7 @@ export function createPageRunner(
       bookConfig.text_classification?.prompt ?? "text_classification",
     pageSectioning: bookConfig.page_sectioning?.prompt ?? "page_sectioning",
     webRendering: bookConfig.web_rendering?.prompt ?? "web_generation_html",
-    sectionEdit: "web_edit",
+    sectionEdit: "web_edit_section",
   };
 
   // Create LLM model with caching
