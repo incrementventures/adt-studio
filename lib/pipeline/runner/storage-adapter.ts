@@ -16,14 +16,14 @@ import type {
   SectionRendering,
 } from "../core/schemas";
 import {
-  fromLegacyTextClassification,
-  fromLegacyImageClassification,
-  fromLegacyPageSectioning,
-  fromLegacySectionRendering,
-  toLegacyTextClassification,
-  toLegacyImageClassification,
-  toLegacyPageSectioning,
-  toLegacySectionRendering,
+  fromDBTextClassification,
+  fromDBImageClassification,
+  fromDBPageSectioning,
+  fromDBSectionRendering,
+  toDBTextClassification,
+  toDBImageClassification,
+  toDBPageSectioning,
+  toDBSectionRendering,
 } from "../core/schemas";
 import { getDb } from "@/lib/db";
 import {
@@ -192,7 +192,7 @@ export function createBookStorage(label: string): Storage {
     async getPageImages(pageId: string): Promise<PageImage[]> {
       // Get images from the latest image classification (includes crops)
       // Fall back to extracted images if no classification exists yet
-      const classification = getVersionedNodeData<LegacyImageClassification>(
+      const classification = getVersionedNodeData<DBImageClassification>(
         label,
         "image-classification",
         pageId
@@ -233,7 +233,7 @@ export function createBookStorage(label: string): Storage {
     async getImageClassification(
       pageId: string
     ): Promise<{ data: ImageClassificationOutput; version: number } | null> {
-      const result = getVersionedNodeData<LegacyImageClassification>(
+      const result = getVersionedNodeData<DBImageClassification>(
         label,
         "image-classification",
         pageId
@@ -241,7 +241,7 @@ export function createBookStorage(label: string): Storage {
       if (!result) return null;
 
       return {
-        data: fromLegacyImageClassification(result.data),
+        data: fromDBImageClassification(result.data),
         version: result.version,
       };
     },
@@ -249,7 +249,7 @@ export function createBookStorage(label: string): Storage {
     async getTextClassification(
       pageId: string
     ): Promise<{ data: TextClassificationOutput; version: number } | null> {
-      const result = getVersionedNodeData<LegacyTextClassification>(
+      const result = getVersionedNodeData<DBTextClassification>(
         label,
         "text-classification",
         pageId
@@ -257,7 +257,7 @@ export function createBookStorage(label: string): Storage {
       if (!result) return null;
 
       return {
-        data: fromLegacyTextClassification(result.data),
+        data: fromDBTextClassification(result.data),
         version: result.version,
       };
     },
@@ -265,7 +265,7 @@ export function createBookStorage(label: string): Storage {
     async getPageSectioning(
       pageId: string
     ): Promise<{ data: PageSectioningOutput; version: number } | null> {
-      const result = getVersionedNodeData<LegacyPageSectioning>(
+      const result = getVersionedNodeData<DBPageSectioning>(
         label,
         "page-sectioning",
         pageId
@@ -273,7 +273,7 @@ export function createBookStorage(label: string): Storage {
       if (!result) return null;
 
       return {
-        data: fromLegacyPageSectioning(result.data),
+        data: fromDBPageSectioning(result.data),
         version: result.version,
       };
     },
@@ -281,7 +281,7 @@ export function createBookStorage(label: string): Storage {
     async getSectionRendering(
       sectionId: string
     ): Promise<{ data: SectionRendering; version: number } | null> {
-      const result = getVersionedNodeData<LegacySectionRendering | null>(
+      const result = getVersionedNodeData<DBSectionRendering | null>(
         label,
         "web-rendering",
         sectionId
@@ -289,7 +289,7 @@ export function createBookStorage(label: string): Storage {
       if (!result || result.data === null) return null;
 
       return {
-        data: fromLegacySectionRendering(result.data),
+        data: fromDBSectionRendering(result.data),
         version: result.version,
       };
     },
@@ -306,7 +306,7 @@ export function createBookStorage(label: string): Storage {
       const extractedImages = getExtractedImages(label, pageId);
       const pathMap = new Map(extractedImages.map((img) => [img.image_id, img.path]));
 
-      const legacyData = {
+      const dbData = {
         images: data.images.map((img) => ({
           image_id: img.imageId,
           path: pathMap.get(img.imageId) ?? `images/${img.imageId}.png`,
@@ -314,15 +314,15 @@ export function createBookStorage(label: string): Storage {
         })),
       };
 
-      return putVersionedNodeData(label, "image-classification", pageId, legacyData);
+      return putVersionedNodeData(label, "image-classification", pageId, dbData);
     },
 
     async putTextClassification(
       pageId: string,
       data: TextClassificationOutput
     ): Promise<{ version: number }> {
-      const legacyData = toLegacyTextClassification(data);
-      return putVersionedNodeData(label, "text-classification", pageId, legacyData);
+      const dbData = toDBTextClassification(data);
+      return putVersionedNodeData(label, "text-classification", pageId, dbData);
     },
 
     async putPageSectioning(
@@ -331,26 +331,26 @@ export function createBookStorage(label: string): Storage {
       textClassificationVersion: number,
       imageClassificationVersion: number
     ): Promise<{ version: number }> {
-      // Need to get the full text/image classification to embed in legacy format
-      const textResult = getVersionedNodeData<LegacyTextClassification>(
+      // Need to get the full text/image classification to embed in DB format
+      const textResult = getVersionedNodeData<DBTextClassification>(
         label,
         "text-classification",
         pageId
       );
-      const imageResult = getVersionedNodeData<LegacyImageClassification>(
+      const imageResult = getVersionedNodeData<DBImageClassification>(
         label,
         "image-classification",
         pageId
       );
 
       const textClassification = textResult
-        ? fromLegacyTextClassification(textResult.data)
+        ? fromDBTextClassification(textResult.data)
         : { reasoning: "", groups: [] };
       const imageClassification = imageResult
-        ? fromLegacyImageClassification(imageResult.data)
+        ? fromDBImageClassification(imageResult.data)
         : { images: [] };
 
-      const legacyData = toLegacyPageSectioning(
+      const dbData = toDBPageSectioning(
         data,
         textClassification,
         imageClassification,
@@ -358,24 +358,24 @@ export function createBookStorage(label: string): Storage {
         imageClassificationVersion
       );
 
-      return putVersionedNodeData(label, "page-sectioning", pageId, legacyData);
+      return putVersionedNodeData(label, "page-sectioning", pageId, dbData);
     },
 
     async putSectionRendering(
       sectionId: string,
       data: SectionRendering | null
     ): Promise<{ version: number }> {
-      const legacyData = data ? toLegacySectionRendering(data) : null;
-      return putVersionedNodeData(label, "web-rendering", sectionId, legacyData);
+      const dbData = data ? toDBSectionRendering(data) : null;
+      return putVersionedNodeData(label, "web-rendering", sectionId, dbData);
     },
   };
 }
 
 // ============================================================================
-// Legacy types (for storage compatibility)
+// DB types (for storage compatibility)
 // ============================================================================
 
-interface LegacyImageClassification {
+interface DBImageClassification {
   images: Array<{
     image_id: string;
     path: string;
@@ -383,7 +383,7 @@ interface LegacyImageClassification {
   }>;
 }
 
-interface LegacyTextClassification {
+interface DBTextClassification {
   reasoning: string;
   groups: Array<{
     group_id?: string;
@@ -392,7 +392,7 @@ interface LegacyTextClassification {
   }>;
 }
 
-interface LegacyPageSectioning {
+interface DBPageSectioning {
   reasoning: string;
   sections: Array<{
     section_type: string;
@@ -404,11 +404,18 @@ interface LegacyPageSectioning {
   }>;
   text_classification_version?: number;
   image_classification_version?: number;
-  groups?: Record<string, unknown>;
-  images?: Record<string, unknown>;
+  groups?: Record<
+    string,
+    {
+      group_type: string;
+      is_pruned?: boolean;
+      texts: Array<{ text_type: string; text: string; is_pruned: boolean }>;
+    }
+  >;
+  images?: Record<string, { is_pruned: boolean }>;
 }
 
-interface LegacySectionRendering {
+interface DBSectionRendering {
   section_index: number;
   section_type: string;
   reasoning: string;

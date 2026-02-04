@@ -8,7 +8,6 @@
 
 import type { Page, PageImage, LLMModel, ValidationResult } from "../core/types";
 import {
-  type TextClassificationOutput,
   type PageSectioningOutput,
   type SectionRendering,
   type WebRenderingOutput,
@@ -24,7 +23,6 @@ import { validateSectionHtml } from "../web-rendering/validate-html";
 export interface RenderPageInput {
   page: Page;
   sectioning: PageSectioningOutput;
-  textClassification: TextClassificationOutput;
   images: Map<string, string>; // imageId → base64
   model: LLMModel;
   promptName: string;
@@ -78,15 +76,7 @@ interface RawWebRenderingResponse {
 export async function renderPage(
   input: RenderPageInput
 ): Promise<WebRenderingOutput> {
-  const {
-    page,
-    sectioning,
-    textClassification,
-    images,
-    model,
-    promptName,
-    maxRetries,
-  } = input;
+  const { page, sectioning, images, model, promptName, maxRetries } = input;
 
   const sections: SectionRendering[] = [];
 
@@ -98,16 +88,18 @@ export async function renderPage(
       continue;
     }
 
-    // Collect inputs for this section
-    const sectionInputs = collectSectionInputs(
-      section,
-      textClassification,
-      images,
-      page.pageId
-    );
+    // Use resolved texts and imageIds from section
+    const texts = section.texts ?? [];
+    const sectionImages: ImageInput[] = (section.imageIds ?? [])
+      .map((imageId) => {
+        const imageBase64 = images.get(imageId);
+        if (!imageBase64) return null;
+        return { imageId, imageBase64 };
+      })
+      .filter((img): img is ImageInput => img !== null);
 
     // Skip sections with no content
-    if (sectionInputs.texts.length === 0 && sectionInputs.images.length === 0) {
+    if (texts.length === 0 && sectionImages.length === 0) {
       continue;
     }
 
@@ -116,8 +108,8 @@ export async function renderPage(
       page,
       sectionIndex: i,
       sectionType: section.sectionType,
-      texts: sectionInputs.texts,
-      images: sectionInputs.images,
+      texts,
+      images: sectionImages,
       model,
       promptName,
       maxRetries,
@@ -199,61 +191,6 @@ export async function renderSection(
     reasoning: result.object.reasoning,
     html: result.object.content,
   };
-}
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-interface SectionInputs {
-  texts: TextInput[];
-  images: ImageInput[];
-}
-
-/**
- * Collect the unpruned texts and images for a section.
- */
-function collectSectionInputs(
-  section: PageSectioningOutput["sections"][number],
-  textClassification: TextClassificationOutput,
-  imageMap: Map<string, string>,
-  pageId: string
-): SectionInputs {
-  const texts: TextInput[] = [];
-  const images: ImageInput[] = [];
-
-  // Build a lookup for groups by ID
-  const groupsById = new Map(
-    textClassification.groups.map((g) => [g.groupId, g])
-  );
-
-  for (const partId of section.partIds) {
-    // Check if it's a group
-    const group = groupsById.get(partId);
-    if (group) {
-      // Add each unpruned text entry
-      group.texts.forEach((t, ti) => {
-        if (t.isPruned) return;
-        texts.push({
-          textId: `${partId}_t${String(ti + 1).padStart(3, "0")}`,
-          textType: t.textType,
-          text: t.text,
-        });
-      });
-      continue;
-    }
-
-    // Check if it's an image
-    const imgBase64 = imageMap.get(partId);
-    if (imgBase64) {
-      images.push({
-        imageId: partId,
-        imageBase64: imgBase64,
-      });
-    }
-  }
-
-  return { texts, images };
 }
 
 // ============================================================================

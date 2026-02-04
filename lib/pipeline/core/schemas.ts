@@ -89,6 +89,11 @@ export const sectionSchema = z.object({
   textColor: z.string(),
   pageNumber: z.number().int().nullable(),
   isPruned: z.boolean(),
+  // Resolved content (populated when reading from storage)
+  texts: z
+    .array(z.object({ textId: z.string(), textType: z.string(), text: z.string() }))
+    .optional(),
+  imageIds: z.array(z.string()).optional(),
 });
 
 export const pageSectioningOutputSchema = z.object({
@@ -158,14 +163,14 @@ export const sectionEditOutputSchema = z.object({
 export type SectionEditOutput = z.infer<typeof sectionEditOutputSchema>;
 
 // ============================================================================
-// Legacy format converters (for compatibility with existing storage)
+// DB format converters (for compatibility with existing storage)
 // ============================================================================
 
 /**
- * Convert new schema format to legacy storage format.
- * Used during migration to maintain compatibility with existing data.
+ * Convert new schema format to DB storage format.
+ * Used to maintain compatibility with existing data.
  */
-export function toLegacyTextClassification(output: TextClassificationOutput): {
+export function toDBTextClassification(output: TextClassificationOutput): {
   reasoning: string;
   groups: Array<{
     group_id: string;
@@ -188,9 +193,9 @@ export function toLegacyTextClassification(output: TextClassificationOutput): {
 }
 
 /**
- * Convert legacy storage format to new schema format.
+ * Convert DB storage format to new schema format.
  */
-export function fromLegacyTextClassification(legacy: {
+export function fromDBTextClassification(db: {
   reasoning: string;
   groups: Array<{
     group_id?: string;
@@ -199,8 +204,8 @@ export function fromLegacyTextClassification(legacy: {
   }>;
 }): TextClassificationOutput {
   return {
-    reasoning: legacy.reasoning,
-    groups: legacy.groups.map((g, idx) => ({
+    reasoning: db.reasoning,
+    groups: db.groups.map((g, idx) => ({
       groupId: g.group_id ?? `gp${String(idx + 1).padStart(3, "0")}`,
       groupType: g.group_type,
       texts: g.texts.map((t) => ({
@@ -212,7 +217,7 @@ export function fromLegacyTextClassification(legacy: {
   };
 }
 
-export function toLegacyImageClassification(
+export function toDBImageClassification(
   output: ImageClassificationOutput
 ): {
   images: Array<{
@@ -230,7 +235,7 @@ export function toLegacyImageClassification(
   };
 }
 
-export function fromLegacyImageClassification(legacy: {
+export function fromDBImageClassification(db: {
   images: Array<{
     image_id: string;
     path: string;
@@ -238,14 +243,14 @@ export function fromLegacyImageClassification(legacy: {
   }>;
 }): ImageClassificationOutput {
   return {
-    images: legacy.images.map((img) => ({
+    images: db.images.map((img) => ({
       imageId: img.image_id,
       isPruned: img.is_pruned,
     })),
   };
 }
 
-export function toLegacyPageSectioning(
+export function toDBPageSectioning(
   output: PageSectioningOutput,
   textClassification: TextClassificationOutput,
   imageClassification: ImageClassificationOutput,
@@ -320,7 +325,7 @@ export function toLegacyPageSectioning(
   };
 }
 
-export function fromLegacyPageSectioning(legacy: {
+export function fromDBPageSectioning(db: {
   reasoning: string;
   sections: Array<{
     section_type: string;
@@ -330,21 +335,60 @@ export function fromLegacyPageSectioning(legacy: {
     page_number: number | null;
     is_pruned: boolean;
   }>;
+  groups?: Record<
+    string,
+    {
+      group_type: string;
+      texts: Array<{ text_type: string; text: string; is_pruned: boolean }>;
+    }
+  >;
+  images?: Record<string, { is_pruned: boolean }>;
 }): PageSectioningOutput {
+  const groups = db.groups ?? {};
+  const embeddedImages = db.images ?? {};
+
   return {
-    reasoning: legacy.reasoning,
-    sections: legacy.sections.map((s) => ({
-      sectionType: s.section_type,
-      partIds: s.part_ids,
-      backgroundColor: s.background_color,
-      textColor: s.text_color,
-      pageNumber: s.page_number,
-      isPruned: s.is_pruned,
-    })),
+    reasoning: db.reasoning,
+    sections: db.sections.map((s) => {
+      // Resolve texts and images for this section
+      const texts: Array<{ textId: string; textType: string; text: string }> = [];
+      const imageIds: string[] = [];
+
+      for (const partId of s.part_ids) {
+        const group = groups[partId];
+        if (group) {
+          group.texts.forEach((t, ti) => {
+            if (t.is_pruned) return;
+            texts.push({
+              textId: `${partId}_t${String(ti + 1).padStart(3, "0")}`,
+              textType: t.text_type,
+              text: t.text,
+            });
+          });
+          continue;
+        }
+
+        const img = embeddedImages[partId];
+        if (img && !img.is_pruned) {
+          imageIds.push(partId);
+        }
+      }
+
+      return {
+        sectionType: s.section_type,
+        partIds: s.part_ids,
+        backgroundColor: s.background_color,
+        textColor: s.text_color,
+        pageNumber: s.page_number,
+        isPruned: s.is_pruned,
+        texts,
+        imageIds,
+      };
+    }),
   };
 }
 
-export function toLegacySectionRendering(output: SectionRendering): {
+export function toDBSectionRendering(output: SectionRendering): {
   section_index: number;
   section_type: string;
   reasoning: string;
@@ -358,16 +402,16 @@ export function toLegacySectionRendering(output: SectionRendering): {
   };
 }
 
-export function fromLegacySectionRendering(legacy: {
+export function fromDBSectionRendering(db: {
   section_index: number;
   section_type: string;
   reasoning: string;
   html: string;
 }): SectionRendering {
   return {
-    sectionIndex: legacy.section_index,
-    sectionType: legacy.section_type,
-    reasoning: legacy.reasoning,
-    html: legacy.html,
+    sectionIndex: db.section_index,
+    sectionType: db.section_type,
+    reasoning: db.reasoning,
+    html: db.html,
   };
 }
