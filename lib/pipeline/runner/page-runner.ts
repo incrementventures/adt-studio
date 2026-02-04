@@ -183,22 +183,20 @@ export async function runPagePipeline(
     progress.emit({ type: "step-start", step: "web-rendering", pageId });
 
     try {
-      // Load required data
-      const textClassification = await storage.getTextClassification(pageId);
+      // Load sectioning (includes embedded text/image classification used when sections were created)
       const sectioning = await storage.getPageSectioning(pageId);
 
-      if (!textClassification || !sectioning) {
-        throw new Error("Prior steps required for web rendering");
+      if (!sectioning) {
+        throw new Error("Page sectioning required for web rendering");
       }
 
       const images = await storage.getPageImages(pageId);
       const imageMap = new Map(images.map((img) => [img.imageId, img.imageBase64]));
 
-      // Render all sections
+      // Render all sections (texts/images are already resolved in sectioning)
       const result = await renderPage({
         page,
         sectioning: sectioning.data,
-        textClassification: textClassification.data,
         images: imageMap,
         model,
         promptName: prompts.webRendering,
@@ -352,19 +350,18 @@ export async function runWebRendering(
   const page = await storage.getPage(pageId);
   if (!page) throw new Error(`Page ${pageId} not found`);
 
-  const textClassification = await storage.getTextClassification(pageId);
   const sectioning = await storage.getPageSectioning(pageId);
-  if (!textClassification || !sectioning) {
-    throw new Error("Prior steps required");
+  if (!sectioning) {
+    throw new Error("Page sectioning required");
   }
 
   const images = await storage.getPageImages(pageId);
   const imageMap = new Map(images.map((img) => [img.imageId, img.imageBase64]));
 
+  // Render all sections (texts/images are already resolved in sectioning)
   const result = await renderPage({
     page,
     sectioning: sectioning.data,
-    textClassification: textClassification.data,
     images: imageMap,
     model,
     promptName: prompts.webRendering,
@@ -407,10 +404,9 @@ export async function runWebRenderingSection(
   const page = await storage.getPage(pageId);
   if (!page) throw new Error(`Page ${pageId} not found`);
 
-  const textClassification = await storage.getTextClassification(pageId);
   const sectioning = await storage.getPageSectioning(pageId);
-  if (!textClassification || !sectioning) {
-    throw new Error("Prior steps required");
+  if (!sectioning) {
+    throw new Error("Page sectioning required");
   }
 
   const section = sectioning.data.sections[sectionIndex];
@@ -420,13 +416,15 @@ export async function runWebRenderingSection(
   const images = await storage.getPageImages(pageId);
   const imageMap = new Map(images.map((img) => [img.imageId, img.imageBase64]));
 
-  // Collect inputs for this section
-  const { texts, images: sectionImages } = collectSectionInputs(
-    section,
-    textClassification.data,
-    imageMap,
-    pageId
-  );
+  // Use resolved texts and imageIds from section
+  const texts = section.texts ?? [];
+  const sectionImages = (section.imageIds ?? [])
+    .map((imageId) => {
+      const imageBase64 = imageMap.get(imageId);
+      if (!imageBase64) return null;
+      return { imageId, imageBase64 };
+    })
+    .filter((img): img is { imageId: string; imageBase64: string } => img !== null);
 
   if (texts.length === 0 && sectionImages.length === 0) {
     throw new Error(`Section ${sectionIndex} has no content`);
@@ -466,25 +464,16 @@ export async function runWebEdit(
   const page = await storage.getPage(pageId);
   if (!page) throw new Error(`Page ${pageId} not found`);
 
-  // Get allowed IDs for validation
-  const textClassification = await storage.getTextClassification(pageId);
+  // Get allowed IDs for validation using resolved content from sectioning
   const sectioning = await storage.getPageSectioning(pageId);
   let allowedTextIds: string[] | undefined;
   let allowedImageIds: string[] | undefined;
 
-  if (textClassification && sectioning) {
+  if (sectioning) {
     const section = sectioning.data.sections[sectionIndex];
     if (section) {
-      const images = await storage.getPageImages(pageId);
-      const imageMap = new Map(images.map((img) => [img.imageId, img.imageBase64]));
-      const inputs = collectSectionInputs(
-        section,
-        textClassification.data,
-        imageMap,
-        pageId
-      );
-      allowedTextIds = inputs.texts.map((t) => t.textId);
-      allowedImageIds = inputs.images.map((i) => i.imageId);
+      allowedTextIds = (section.texts ?? []).map((t) => t.textId);
+      allowedImageIds = section.imageIds ?? [];
     }
   }
 
@@ -518,43 +507,3 @@ export async function runWebEdit(
 
 // ============================================================================
 // Helper functions
-// ============================================================================
-
-import type { TextClassificationOutput, PageSectioningOutput } from "../core/schemas";
-import type { TextInput, ImageInput } from "../steps/web-rendering";
-
-function collectSectionInputs(
-  section: PageSectioningOutput["sections"][number],
-  textClassification: TextClassificationOutput,
-  imageMap: Map<string, string>,
-  pageId: string
-): { texts: TextInput[]; images: ImageInput[] } {
-  const texts: TextInput[] = [];
-  const images: ImageInput[] = [];
-
-  const groupsById = new Map(
-    textClassification.groups.map((g) => [g.groupId, g])
-  );
-
-  for (const partId of section.partIds) {
-    const group = groupsById.get(partId);
-    if (group) {
-      group.texts.forEach((t, ti) => {
-        if (t.isPruned) return;
-        texts.push({
-          textId: `${partId}_t${String(ti + 1).padStart(3, "0")}`,
-          textType: t.textType,
-          text: t.text,
-        });
-      });
-      continue;
-    }
-
-    const imgBase64 = imageMap.get(partId);
-    if (imgBase64) {
-      images.push({ imageId: partId, imageBase64: imgBase64 });
-    }
-  }
-
-  return { texts, images };
-}
