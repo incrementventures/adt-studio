@@ -190,10 +190,20 @@ export function createBookStorage(label: string): Storage {
     },
 
     async getPageImages(pageId: string): Promise<PageImage[]> {
-      const images = getExtractedImages(label, pageId);
+      // Get images from the latest image classification (includes crops)
+      const classification = getVersionedNodeData<LegacyImageClassification>(
+        label,
+        "image-classification",
+        pageId
+      );
+
+      if (!classification) {
+        return [];
+      }
+
       const result: PageImage[] = [];
 
-      for (const img of images) {
+      for (const img of classification.data.images) {
         const absPath = path.join(paths.bookDir, img.path);
         if (!fs.existsSync(absPath)) continue;
 
@@ -288,7 +298,7 @@ export function createBookStorage(label: string): Storage {
       pageId: string,
       data: ImageClassificationOutput
     ): Promise<{ version: number }> {
-      // Enrich with paths from DB
+      // Enrich with paths from DB (only extracted images - crops are added via UI)
       const extractedImages = getExtractedImages(label, pageId);
       const pathMap = new Map(extractedImages.map((img) => [img.image_id, img.path]));
 
