@@ -42,7 +42,14 @@ function normalizePhase(progress: string | undefined, status: string): Phase {
   if (status === "queued") return "queued";
   if (status === "completed" || status === "failed") return "completed";
   if (!progress) return "queued";
-  if (progress.startsWith("Rendering section")) return "rendering";
+
+  // Handle "Starting X" and "Completed X" format from pipeline
+  if (progress.includes("image classification")) return "Classifying images";
+  if (progress.includes("text classification")) return "Classifying text";
+  if (progress.includes("page sectioning")) return "Sectioning page";
+  if (progress.includes("web rendering")) return "Rendering web pages";
+  if (progress.startsWith("Rendered section")) return "rendering";
+
   const found = PHASE_ORDER.find((p) => p === progress);
   return found ?? "queued";
 }
