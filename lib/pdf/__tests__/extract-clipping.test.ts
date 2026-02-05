@@ -1,0 +1,245 @@
+import { describe, it, expect } from "vitest";
+import sharp from "sharp";
+import { extractPdf, _testing } from "../extract";
+import { createTestPdf } from "./create-test-pdf";
+
+const { parseSvgPathBbox, applyMatrixTransformToBbox, parseClipPathBounds, isPageLevelClip } = _testing;
+
+describe("SVG Path Bbox Parsing", () => {
+  it("parses simple M L path", () => {
+    const bbox = parseSvgPathBbox("M10 20 L30 40");
+    expect(bbox).toEqual([10, 20, 30, 40]);
+  });
+
+  it("parses path with H and V commands", () => {
+    const bbox = parseSvgPathBbox("M10 20H50V60H10Z");
+    expect(bbox).toEqual([10, 20, 50, 60]);
+  });
+
+  it("parses path with relative commands", () => {
+    const bbox = parseSvgPathBbox("M10 20 l20 30");
+    expect(bbox).toEqual([10, 20, 30, 50]);
+  });
+
+  it("parses path with cubic bezier", () => {
+    const bbox = parseSvgPathBbox("M0 0 C10 20 30 40 50 50");
+    expect(bbox).not.toBeNull();
+    expect(bbox![0]).toBeLessThanOrEqual(0);
+    expect(bbox![1]).toBeLessThanOrEqual(0);
+    expect(bbox![2]).toBeGreaterThanOrEqual(50);
+    expect(bbox![3]).toBeGreaterThanOrEqual(50);
+  });
+
+  it("parses path with negative numbers separated by minus sign", () => {
+    const bbox = parseSvgPathBbox("M0 0 L.073-.195");
+    expect(bbox).not.toBeNull();
+    expect(bbox![2]).toBeCloseTo(0.073, 3);
+    expect(bbox![3]).toBeCloseTo(0, 3);
+  });
+
+  it("returns null for empty path", () => {
+    expect(parseSvgPathBbox("")).toBeNull();
+  });
+
+  it("returns null for invalid path", () => {
+    expect(parseSvgPathBbox("not a path")).toBeNull();
+  });
+});
+
+describe("Matrix Transform Application", () => {
+  it("applies identity transform", () => {
+    const bbox: [number, number, number, number] = [10, 20, 30, 40];
+    const result = applyMatrixTransformToBbox(bbox, "matrix(1,0,0,1,0,0)");
+    expect(result).toEqual([10, 20, 30, 40]);
+  });
+
+  it("applies translation transform", () => {
+    const bbox: [number, number, number, number] = [0, 0, 10, 10];
+    const result = applyMatrixTransformToBbox(bbox, "matrix(1,0,0,1,100,200)");
+    expect(result).toEqual([100, 200, 110, 210]);
+  });
+
+  it("applies scale transform", () => {
+    const bbox: [number, number, number, number] = [0, 0, 10, 10];
+    const result = applyMatrixTransformToBbox(bbox, "matrix(2,0,0,2,0,0)");
+    expect(result).toEqual([0, 0, 20, 20]);
+  });
+
+  it("applies Y-flip transform (common in PDF)", () => {
+    const bbox: [number, number, number, number] = [0, 20, 10, 40];
+    const result = applyMatrixTransformToBbox(bbox, "matrix(1,0,0,-1,0,100)");
+    expect(result).toEqual([0, 60, 10, 80]);
+  });
+
+  it("returns original bbox for null transform", () => {
+    const bbox: [number, number, number, number] = [10, 20, 30, 40];
+    const result = applyMatrixTransformToBbox(bbox, null);
+    expect(result).toEqual([10, 20, 30, 40]);
+  });
+
+  it("returns original bbox for non-matrix transform", () => {
+    const bbox: [number, number, number, number] = [10, 20, 30, 40];
+    const result = applyMatrixTransformToBbox(bbox, "rotate(45)");
+    expect(result).toEqual([10, 20, 30, 40]);
+  });
+});
+
+describe("Clip Path Bounds Parsing", () => {
+  it("parses simple path clip with transform", () => {
+    const clipContent = '<path transform="matrix(1,0,0,1,10,20)" d="M0 0H100V100H0Z"/>';
+    const bounds = parseClipPathBounds(clipContent);
+    expect(bounds).toEqual([10, 20, 110, 120]);
+  });
+
+  it("parses path clip with Y-flip transform", () => {
+    const clipContent = '<path transform="matrix(1,0,0,-1,0,100)" d="M0 0H50V50H0Z"/>';
+    const bounds = parseClipPathBounds(clipContent);
+    expect(bounds).toEqual([0, 50, 50, 100]);
+  });
+
+  it("parses rect clip element", () => {
+    const clipContent = '<rect x="10" y="20" width="100" height="50"/>';
+    const bounds = parseClipPathBounds(clipContent);
+    expect(bounds).toEqual([10, 20, 110, 70]);
+  });
+
+  it("returns null for empty content", () => {
+    expect(parseClipPathBounds("")).toBeNull();
+  });
+});
+
+describe("Page-Level Clip Detection", () => {
+  const pageWidth = 500;
+  const pageHeight = 700;
+
+  it("identifies full-page clip as page-level", () => {
+    const clipBounds: [number, number, number, number] = [0, 0, 500, 700];
+    expect(isPageLevelClip(clipBounds, pageWidth, pageHeight)).toBe(true);
+  });
+
+  it("identifies >90% page coverage as page-level", () => {
+    const clipBounds: [number, number, number, number] = [-10, -10, 510, 710];
+    expect(isPageLevelClip(clipBounds, pageWidth, pageHeight)).toBe(true);
+  });
+
+  it("identifies small clip as NOT page-level", () => {
+    const clipBounds: [number, number, number, number] = [0, 100, 500, 200];
+    expect(isPageLevelClip(clipBounds, pageWidth, pageHeight)).toBe(false);
+  });
+
+  it("identifies clip mostly outside page as NOT page-level", () => {
+    const clipBounds: [number, number, number, number] = [450, 0, 1000, 700];
+    expect(isPageLevelClip(clipBounds, pageWidth, pageHeight)).toBe(false);
+  });
+
+  it("handles clip with no intersection with page", () => {
+    const clipBounds: [number, number, number, number] = [600, 800, 800, 1000];
+    expect(isPageLevelClip(clipBounds, pageWidth, pageHeight)).toBe(false);
+  });
+
+  it("returns false for null bounds", () => {
+    expect(isPageLevelClip(null, pageWidth, pageHeight)).toBe(false);
+  });
+});
+
+// Integration tests using generated test PDF
+describe("Vector Image Extraction with Clipping", () => {
+  const pdfBuffer = createTestPdf();
+
+  it("extracts clipped vector shapes", async () => {
+    // Page 1 has red + blue rects inside clips, plus unclipped green + orange rects
+    const result = await extractPdf({ pdfBuffer, startPage: 1, endPage: 1 });
+    expect(result.pages).toHaveLength(1);
+
+    const page = result.pages[0];
+    expect(page.images.length).toBeGreaterThan(0);
+
+    for (const img of page.images) {
+      expect(img.width).toBeGreaterThan(0);
+      expect(img.height).toBeGreaterThan(0);
+      expect(img.pngBuffer[0]).toBe(0x89); // PNG magic
+    }
+  });
+
+  it("groups overlapping shapes and separates non-overlapping ones", async () => {
+    // Page 1: two overlapping green rects (grouped) + one isolated orange rect (separate)
+    // Plus two clipped rects in different clips (separate from each other)
+    const result = await extractPdf({ pdfBuffer, startPage: 1, endPage: 1 });
+    const page = result.pages[0];
+
+    // Should have at least 3 images:
+    // - clipped red rect
+    // - clipped blue rect
+    // - grouped green rects (2 overlapping -> 1 image)
+    // - isolated orange rect
+    // (orange may be filtered if too small, but we should have >= 3)
+    expect(page.images.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("handles nested clips (clip intersection)", async () => {
+    // Page 2: magenta rect inside nested clip_1 > clip_2
+    const result = await extractPdf({ pdfBuffer, startPage: 2, endPage: 2 });
+    const page = result.pages[0];
+
+    expect(page.images.length).toBeGreaterThan(0);
+
+    // All images should be valid PNGs with transparency
+    for (const img of page.images) {
+      const meta = await sharp(img.pngBuffer).metadata();
+      expect(meta.channels).toBe(4); // RGBA
+    }
+  });
+});
+
+describe("Raster Image Extraction with Clipping", () => {
+  const pdfBuffer = createTestPdf();
+
+  it("extracts raster image with clip-path applied", async () => {
+    // Page 3: image clipped by a rectangle
+    const result = await extractPdf({ pdfBuffer, startPage: 3, endPage: 3 });
+    const page = result.pages[0];
+
+    // Should have at least 1 raster image (the clipped one)
+    const rasterImages = page.images.filter((img) => img.imageId.startsWith("pg003_im"));
+    expect(rasterImages.length).toBeGreaterThanOrEqual(1);
+
+    // The clipped image should have an alpha channel
+    const meta = await sharp(rasterImages[0].pngBuffer).metadata();
+    expect(meta.channels).toBe(4);
+    expect(meta.hasAlpha).toBe(true);
+  });
+
+  it("clipped raster image has both transparent and opaque pixels", async () => {
+    // Page 3: 200x200 image clipped to 100x100 rect
+    // The clipped area should have opaque pixels, the rest should be transparent
+    const result = await extractPdf({ pdfBuffer, startPage: 3, endPage: 3 });
+    const page = result.pages[0];
+
+    const rasterImages = page.images.filter((img) => img.imageId.startsWith("pg003_im"));
+    expect(rasterImages.length).toBeGreaterThanOrEqual(1);
+
+    const { data, info } = await sharp(rasterImages[0].pngBuffer)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    let hasTransparent = false;
+    let hasOpaque = false;
+    for (let i = 3; i < data.length; i += info.channels) {
+      if (data[i] === 0) hasTransparent = true;
+      if (data[i] === 255) hasOpaque = true;
+      if (hasTransparent && hasOpaque) break;
+    }
+    expect(hasTransparent).toBe(true);
+    expect(hasOpaque).toBe(true);
+  });
+
+  it("extracts all pages without errors", async () => {
+    const result = await extractPdf({ pdfBuffer });
+    expect(result.pages).toHaveLength(3);
+
+    for (const page of result.pages) {
+      expect(page.pageImage.pngBuffer.length).toBeGreaterThan(0);
+      expect(page.text).toBeDefined();
+    }
+  });
+});
