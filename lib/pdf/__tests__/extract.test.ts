@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import mupdf from "mupdf";
 import { extractPdf } from "../extract";
 
 // Minimal valid PDF with one blank page (no content stream)
@@ -16,6 +17,45 @@ trailer<</Size 4/Root 1 0 R>>
 startxref
 178
 %%EOF`;
+
+/**
+ * Create a valid PDF with a Form XObject (vector graphic) using mupdf.
+ */
+function createPdfWithVectorForm(): Buffer {
+  const doc = new mupdf.PDFDocument();
+
+  // Create a Form XObject with a simple rectangle
+  const formDict = doc.newDictionary();
+  formDict.put("Type", doc.newName("XObject"));
+  formDict.put("Subtype", doc.newName("Form"));
+  const bbox = doc.newArray();
+  bbox.push(0);
+  bbox.push(0);
+  bbox.push(100);
+  bbox.push(100);
+  formDict.put("BBox", bbox);
+
+  // Form content stream: draw a rectangle
+  const formContent = "0 0 100 100 re S";
+  const formObj = doc.addStream(formContent, formDict);
+
+  // Create page resources with the form
+  const resources = doc.newDictionary();
+  const xobjects = doc.newDictionary();
+  xobjects.put("MyForm", formObj);
+  resources.put("XObject", xobjects);
+
+  // Page content: invoke the form
+  const pageContent = "q /MyForm Do Q";
+
+  // Add the page - addPage creates the page object, insertPage adds it to the tree
+  const pageObj = doc.addPage([0, 0, 612, 792], 0, resources, pageContent);
+  doc.insertPage(-1, pageObj);
+
+  // Save to buffer
+  const output = doc.saveToBuffer("").asUint8Array();
+  return Buffer.from(output);
+}
 
 // Two-page PDF
 const TWO_PAGE_PDF = `%PDF-1.4
@@ -135,5 +175,23 @@ describe("extractPdf", () => {
     const pdfBuffer = Buffer.from("not a pdf");
 
     await expect(extractPdf({ pdfBuffer })).rejects.toThrow();
+  });
+
+  it("extracts vector images from Form XObjects", async () => {
+    const pdfBuffer = createPdfWithVectorForm();
+    const result = await extractPdf({ pdfBuffer });
+
+    expect(result.pages).toHaveLength(1);
+    const page = result.pages[0];
+
+    // Should have extracted the vector Form XObject (uses same _im format as raster images)
+    expect(page.images.length).toBeGreaterThanOrEqual(1);
+
+    const vecImage = page.images[0];
+    expect(vecImage.imageId).toBe("pg001_im001");
+    expect(vecImage.pngBuffer).toBeInstanceOf(Buffer);
+    expect(vecImage.width).toBeGreaterThan(0);
+    expect(vecImage.height).toBeGreaterThan(0);
+    expect(vecImage.hash).toMatch(/^[a-f0-9]{16}$/);
   });
 });
