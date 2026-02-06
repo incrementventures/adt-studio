@@ -1,5 +1,11 @@
 import path from "node:path";
-import Database from "better-sqlite3";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import type { Database as SqlJsRawDatabase, SqlJsStatic } from "sql.js";
+
+const esmRequire = createRequire(import.meta.url);
+const initSqlJs = esmRequire("sql.js") as (config?: Record<string, unknown>) => Promise<SqlJsStatic>;
+const SQL = await initSqlJs();
 
 export const SCHEMA_VERSION = 7;
 
@@ -61,12 +67,100 @@ CREATE TABLE IF NOT EXISTS llm_log (
 );
 `;
 
+// ---------------------------------------------------------------------------
+// sql.js wrapper — provides the same API surface as better-sqlite3
+// ---------------------------------------------------------------------------
+
+class SqlJsDatabase {
+  private db: SqlJsRawDatabase;
+  private dbPath: string;
+
+  constructor(dbPath: string) {
+    this.dbPath = dbPath;
+    if (fs.existsSync(dbPath)) {
+      const buffer = fs.readFileSync(dbPath);
+      this.db = new SQL.Database(buffer);
+    } else {
+      this.db = new SQL.Database();
+    }
+  }
+
+  prepare(sql: string) {
+    const self = this;
+    return {
+      run(...params: unknown[]) {
+        self.db.run(sql, params as Parameters<SqlJsRawDatabase["run"]>[1]);
+        const changes = self.db.getRowsModified();
+        self.persist();
+        return { changes };
+      },
+      get(...params: unknown[]): Record<string, unknown> | undefined {
+        const stmt = self.db.prepare(sql);
+        if (params.length > 0) {
+          stmt.bind(params as Parameters<typeof stmt.bind>[0]);
+        }
+        if (stmt.step()) {
+          const row = stmt.getAsObject();
+          stmt.free();
+          return row as Record<string, unknown>;
+        }
+        stmt.free();
+        return undefined;
+      },
+      all(...params: unknown[]): Record<string, unknown>[] {
+        const stmt = self.db.prepare(sql);
+        if (params.length > 0) {
+          stmt.bind(params as Parameters<typeof stmt.bind>[0]);
+        }
+        const rows: Record<string, unknown>[] = [];
+        while (stmt.step()) {
+          rows.push(stmt.getAsObject() as Record<string, unknown>);
+        }
+        stmt.free();
+        return rows;
+      },
+    };
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+    this.persist();
+  }
+
+  pragma(pragma: string): unknown {
+    const results = this.db.exec(`PRAGMA ${pragma}`);
+    this.persist();
+    if (results.length > 0 && results[0].values.length > 0) {
+      return results[0].values[0][0];
+    }
+    return undefined;
+  }
+
+  close(): void {
+    this.persist();
+    this.db.close();
+  }
+
+  private persist(): void {
+    const data = this.db.export();
+    const dir = path.dirname(this.dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(this.dbPath, Buffer.from(data));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Connection pool (unchanged logic)
+// ---------------------------------------------------------------------------
+
 const globalForDb = globalThis as unknown as {
-  __dbConnections?: Map<string, Database.Database>;
+  __dbConnections?: Map<string, SqlJsDatabase>;
   __deletedLabels?: Set<string>;
 };
 const connections =
-  globalForDb.__dbConnections ?? new Map<string, Database.Database>();
+  globalForDb.__dbConnections ?? new Map<string, SqlJsDatabase>();
 globalForDb.__dbConnections = connections;
 
 const deletedLabels = globalForDb.__deletedLabels ?? new Set<string>();
@@ -76,7 +170,7 @@ function booksRoot(): string {
   return path.resolve(process.env.BOOKS_ROOT ?? "books");
 }
 
-export function getDb(label: string): Database.Database {
+export function getDb(label: string): SqlJsDatabase {
   if (deletedLabels.has(label)) {
     throw new Error(`Book "${label}" has been deleted`);
   }
@@ -85,7 +179,7 @@ export function getDb(label: string): Database.Database {
   if (existing) return existing;
 
   const dbPath = path.join(booksRoot(), label, `${label}.db`);
-  const db = new Database(dbPath);
+  const db = new SqlJsDatabase(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
 
@@ -94,7 +188,7 @@ export function getDb(label: string): Database.Database {
   return db;
 }
 
-function initSchema(db: Database.Database): void {
+function initSchema(db: SqlJsDatabase): void {
   const hasVersionTable = db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
