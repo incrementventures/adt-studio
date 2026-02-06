@@ -814,6 +814,7 @@ function extractShapesFromSvg(svgContent: string): ShapeInfo[] {
   let seqno = 0;
 
   // Remove <defs>...</defs> section for shape extraction (but we'll use it for clips later)
+  // Note: <use> elements (font glyphs/text) are intentionally excluded - text is captured via toStructuredText()
   const contentWithoutDefs = svgContent.replace(/<defs>[\s\S]*?<\/defs>/gi, "");
 
   // Track clip group boundaries (start and end positions)
@@ -965,17 +966,10 @@ function groupOverlappingShapes(
     }
   };
 
-  // Helper to check if two shapes have the same clip configuration
-  const sameClips = (a: ShapeInfo, b: ShapeInfo): boolean => {
-    if (a.clipPathIds.length !== b.clipPathIds.length) return false;
-    const aSet = new Set(a.clipPathIds);
-    return b.clipPathIds.every(id => aSet.has(id));
-  };
-
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      // Only group shapes that overlap AND have the same clip configuration
-      if (boxesOverlap(shapes[i].bbox, shapes[j].bbox, margin) && sameClips(shapes[i], shapes[j])) {
+      // Group shapes that overlap spatially - each shape keeps its own clips for rendering
+      if (boxesOverlap(shapes[i].bbox, shapes[j].bbox, margin)) {
         union(i, j);
       }
     }
@@ -1265,38 +1259,22 @@ async function extractVectorImagesFromSvg(
   const allShapes = extractShapesFromSvg(svgContent);
   if (allShapes.length === 0) return images;
 
-  // Threshold for "large" shapes (backgrounds) - 75% of page dimension
+  // Skip background shapes - large in either dimension (>75% of page)
+  // These are backgrounds/decorative elements that would merge unrelated groups
   const largeWidthThreshold = pageWidth * OVERLAP_THRESHOLD_PERCENT;
   const largeHeightThreshold = pageHeight * OVERLAP_THRESHOLD_PERCENT;
 
-  // Separate large shapes (backgrounds) from normal shapes
-  const largeShapes: ShapeInfo[] = [];
   const normalShapes: ShapeInfo[] = [];
-
   for (const shape of allShapes) {
     const [minX, minY, maxX, maxY] = shape.bbox;
     const width = maxX - minX;
     const height = maxY - minY;
-
-    // Skip invalid shapes
     if (width <= 0 || height <= 0) continue;
-
-    // Large shapes are extracted individually (they're backgrounds)
-    if (width >= largeWidthThreshold || height >= largeHeightThreshold) {
-      largeShapes.push(shape);
-    } else {
-      normalShapes.push(shape);
-    }
+    if (width >= largeWidthThreshold || height >= largeHeightThreshold) continue;
+    normalShapes.push(shape);
   }
 
-  // Extract large shapes individually (don't group them)
-  for (const shape of largeShapes) {
-    imgIndex++;
-    const img = await renderShapeGroup([shape], pageId, imgIndex, svgDefs, pageWidth, pageHeight);
-    if (img) images.push(img);
-  }
-
-  // Group overlapping normal shapes
+  // Group overlapping shapes
   const groups = groupOverlappingShapes(normalShapes, OVERLAP_MARGIN);
 
   // Render each group as a single image
