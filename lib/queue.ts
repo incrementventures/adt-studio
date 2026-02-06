@@ -101,7 +101,11 @@ class JobQueue {
       this.updateJob(job, { status: "running", startedAt: Date.now() });
 
       try {
-        await executor(job, (patch) => this.updateJob(job, patch));
+        await executor(job, (patch) => {
+          // If job was cancelled (e.g. book deleted), throw to stop the executor
+          if (job.status === "failed") throw new Error("Job cancelled");
+          this.updateJob(job, patch);
+        });
         if (job.status === "running") {
           this.updateJob(job, { status: "completed", completedAt: Date.now() });
         }
@@ -161,6 +165,37 @@ class JobQueue {
 
   getJob(id: string): Job | undefined {
     return this.jobs.get(id);
+  }
+
+  /** Cancel all queued jobs for a given book label. Running jobs are marked failed. */
+  cancelByLabel(label: string): number {
+    let count = 0;
+    // Remove from pending queue
+    this.pending = this.pending.filter((id) => {
+      const job = this.jobs.get(id);
+      if (job && job.label === label) {
+        this.updateJob(job, {
+          status: "failed",
+          error: "Book deleted",
+          completedAt: Date.now(),
+        });
+        count++;
+        return false;
+      }
+      return true;
+    });
+    // Mark running jobs as failed so executors see the status change
+    for (const job of this.jobs.values()) {
+      if (job.label === label && job.status === "running") {
+        this.updateJob(job, {
+          status: "failed",
+          error: "Book deleted",
+          completedAt: Date.now(),
+        });
+        count++;
+      }
+    }
+    return count;
   }
 
   private prune() {

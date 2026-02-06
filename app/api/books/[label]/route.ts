@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { getBooksRoot } from "@/lib/books";
 import { closeDb } from "@/lib/db";
 import { resolveBookPaths } from "@/lib/pipeline/types";
+import { queue } from "@/lib/queue";
 
 const LABEL_RE = /^[a-z0-9-]+$/;
 
@@ -22,6 +23,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Book not found" }, { status: 404 });
   }
 
+  queue.cancelByLabel(label);
   closeDb(label);
   fs.rmSync(paths.bookDir, { recursive: true, force: true });
 

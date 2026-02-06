@@ -151,13 +151,13 @@ export function hasImage(label: string, imageId: string): boolean {
 export function getExtractedImages(
   label: string,
   pageId: string
-): { image_id: string; path: string }[] {
+): { image_id: string; path: string; width: number; height: number }[] {
   const db = getDb(label);
   return db
     .prepare(
-      "SELECT image_id, path FROM images WHERE page_id = ? AND source = 'extract' ORDER BY CASE WHEN image_id LIKE '%_page' THEN 0 ELSE 1 END, image_id"
+      "SELECT image_id, path, width, height FROM images WHERE page_id = ? AND source = 'extract' ORDER BY CASE WHEN image_id LIKE '%_page' THEN 0 ELSE 1 END, image_id"
     )
-    .all(pageId) as { image_id: string; path: string }[];
+    .all(pageId) as { image_id: string; path: string; width: number; height: number }[];
 }
 
 export function getMaxImageNum(label: string, pageId: string): number {

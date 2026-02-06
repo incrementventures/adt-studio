@@ -63,16 +63,24 @@ CREATE TABLE IF NOT EXISTS llm_log (
 
 const globalForDb = globalThis as unknown as {
   __dbConnections?: Map<string, Database.Database>;
+  __deletedLabels?: Set<string>;
 };
 const connections =
   globalForDb.__dbConnections ?? new Map<string, Database.Database>();
 globalForDb.__dbConnections = connections;
+
+const deletedLabels = globalForDb.__deletedLabels ?? new Set<string>();
+globalForDb.__deletedLabels = deletedLabels;
 
 function booksRoot(): string {
   return path.resolve(process.env.BOOKS_ROOT ?? "books");
 }
 
 export function getDb(label: string): Database.Database {
+  if (deletedLabels.has(label)) {
+    throw new Error(`Book "${label}" has been deleted`);
+  }
+
   const existing = connections.get(label);
   if (existing) return existing;
 
@@ -120,6 +128,12 @@ export function closeDb(label: string): void {
     db.close();
     connections.delete(label);
   }
+  deletedLabels.add(label);
+}
+
+/** Re-allow DB access for a label (e.g. after reimport). */
+export function undeleteDb(label: string): void {
+  deletedLabels.delete(label);
 }
 
 export function closeAllDbs(): void {
