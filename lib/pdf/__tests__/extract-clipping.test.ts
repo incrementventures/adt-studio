@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import sharp from "sharp";
 import { extractPdf, _testing } from "../extract";
-import { createTestPdf } from "./create-test-pdf";
+import { createTestPdf, createSmallGroupTestPdf } from "./create-test-pdf";
 
 const { parseSvgPathBbox, applyMatrixTransformToBbox, parseClipPathBounds, isPageLevelClip } = _testing;
 
@@ -139,6 +139,20 @@ describe("Page-Level Clip Detection", () => {
 
   it("returns false for null bounds", () => {
     expect(isPageLevelClip(null, pageWidth, pageHeight)).toBe(false);
+  });
+});
+
+describe("Small-group filtering", () => {
+  it("filters out groups where both dimensions are below MIN_VECTOR_DIMENSION", async () => {
+    const pdfBuffer = createSmallGroupTestPdf();
+    const result = await extractPdf({ pdfBuffer });
+    const page = result.pages[0];
+
+    // Should have exactly 1 image — the 100x100 rect. The 10x10 rect should be filtered.
+    expect(page.images.length).toBe(1);
+    // The extracted image should be the larger shape
+    expect(page.images[0].width).toBeGreaterThan(20);
+    expect(page.images[0].height).toBeGreaterThan(20);
   });
 });
 

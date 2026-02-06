@@ -364,8 +364,8 @@ async function extractRasterImages(
         height: pngBuf.readUInt32BE(20),
         hash: hashBuffer(pngBuf),
       });
-    } catch {
-      // Skip images that fail to render
+    } catch (err) {
+      console.warn(`[extractRasterImages] Failed to render image ${imgIndex + 1} on ${pageId}:`, err instanceof Error ? err.message : err);
     }
   }
 
@@ -1137,12 +1137,12 @@ async function renderShapeGroup(
   imgIndex: number,
   svgDefs: string,
   pageWidth: number,
-  pageHeight: number
+  pageHeight: number,
+  precomputedBbox?: BBox
 ): Promise<ExtractedImage | null> {
   if (shapes.length === 0) return null;
 
-  // Compute combined bounding box for the group
-  const bbox = computeGroupBbox(shapes);
+  const bbox = precomputedBbox ?? computeGroupBbox(shapes);
   const [minX, minY, maxX, maxY] = bbox;
   const width = maxX - minX;
   const height = maxY - minY;
@@ -1239,7 +1239,8 @@ ${shapeElements}
       height: pngBuf.readUInt32BE(20),
       hash: hashBuffer(pngBuf),
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[renderShapeGroup] Failed to render group ${imgIndex} on ${pageId}:`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -1277,10 +1278,17 @@ async function extractVectorImagesFromSvg(
   // Group overlapping shapes
   const groups = groupOverlappingShapes(normalShapes, OVERLAP_MARGIN);
 
-  // Render each group as a single image
+  // Render each group as a single image, skipping groups too small to be meaningful.
+  // Uses && so thin shapes (e.g. tall narrow lines) still pass through — only skip
+  // when both dimensions are below the threshold.
   for (const group of groups) {
+    const bbox = computeGroupBbox(group);
+    const groupW = bbox[2] - bbox[0];
+    const groupH = bbox[3] - bbox[1];
+    if (groupW < MIN_VECTOR_DIMENSION && groupH < MIN_VECTOR_DIMENSION) continue;
+
     imgIndex++;
-    const img = await renderShapeGroup(group, pageId, imgIndex, svgDefs, pageWidth, pageHeight);
+    const img = await renderShapeGroup(group, pageId, imgIndex, svgDefs, pageWidth, pageHeight, bbox);
     if (img) images.push(img);
   }
 

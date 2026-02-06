@@ -28,6 +28,7 @@ adt-press
 # misc
 .DS_Store
 *.pem
+*.pdf
 
 # SQLite WAL/SHM files (transient, never commit)
 *-wal
