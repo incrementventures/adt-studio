@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import sharp from "sharp";
+import { cropPng } from "@/lib/images/png-utils";
 import {
   getBooksRoot,
   getPage,
@@ -136,9 +136,8 @@ export async function PUT(
     if (!fs.existsSync(originalPath)) continue;
     const buf = fs.readFileSync(originalPath);
     const { x, y, width, height } = img.source_region;
-    await sharp(buf)
-      .extract({ left: x, top: y, width, height })
-      .toFile(path.join(imagesDir, `${newId}.png`));
+    const croppedPng = cropPng(buf, { left: x, top: y, width, height });
+    fs.writeFileSync(path.join(imagesDir, `${newId}.png`), croppedPng);
     const cropBuf = fs.readFileSync(path.join(imagesDir, `${newId}.png`));
     putImage(label, newId, pageId, `images/${newId}.png`, hashBuffer(cropBuf), width, height, "crop");
   }

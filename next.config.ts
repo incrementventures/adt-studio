@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["sql.js"],
+  serverExternalPackages: ["@resvg/resvg-wasm", "sql.js"],
 };
 
 export default nextConfig;

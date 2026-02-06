@@ -6,7 +6,7 @@
 
 import { createHash } from "crypto";
 import mupdf, { type Document as MupdfDocument } from "mupdf";
-import sharp from "sharp";
+import { renderSvgToPng } from "./svg-render";
 
 // ============================================================================
 // Types
@@ -100,6 +100,10 @@ export async function extractPdf(
       page: i - start + 1,
       totalPages: rangeSize,
     });
+
+    // Yield to event loop so progress streams can flush to clients.
+    // (resvg-wasm renders synchronously, unlike sharp which used a worker thread)
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   return {
@@ -349,9 +353,7 @@ async function extractRasterImages(
     const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${minX} ${minY} ${vbW} ${vbH}">\n${defsStr}\n${imageContent}\n</svg>`;
 
     try {
-      const pngBuf = await sharp(Buffer.from(svgStr), { density: 144 })
-        .png()
-        .toBuffer();
+      const pngBuf = await renderSvgToPng(svgStr);
 
       imgIndex++;
       const imgId = pageId + "_im" + String(imgIndex).padStart(3, "0");
@@ -1225,9 +1227,7 @@ ${shapeElements}
 
   try {
     // Render to PNG with transparency (144 DPI = 2x scale)
-    const pngBuf = await sharp(Buffer.from(shapeSvg), { density: 144 })
-      .png()
-      .toBuffer();
+    const pngBuf = await renderSvgToPng(shapeSvg);
 
     const imgId = pageId + "_im" + String(imgIndex).padStart(3, "0");
 
