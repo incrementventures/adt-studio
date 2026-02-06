@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getBooksRoot, putBookMetadata } from "@/lib/books";
-import { closeDb, getDb } from "@/lib/db";
+import { closeDb, getDb, undeleteDb } from "@/lib/db";
 import { resolveBookPaths } from "@/lib/pipeline/types";
 import { loadBookConfig } from "@/lib/config";
 import { runExtract, createBookStorage } from "@/lib/pipeline/runner";
@@ -51,6 +51,9 @@ export async function POST(
     // Config read failed — proceed with defaults
   }
 
+  // Cancel any running/queued jobs for this book before reimporting
+  queue.cancelByLabel(label);
+
   // Close DB connection and delete the .db file
   closeDb(label);
   const dbPath = path.join(paths.bookDir, `${label}.db`);
@@ -80,7 +83,8 @@ export async function POST(
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
   }
 
-  // Ensure fresh DB exists
+  // Re-allow DB access and create fresh DB
+  undeleteDb(label);
   getDb(label);
 
   // Stream extraction progress as NDJSON

@@ -302,16 +302,21 @@ export function createBookStorage(label: string): Storage {
       pageId: string,
       data: ImageClassificationOutput
     ): Promise<{ version: number }> {
-      // Enrich with paths from DB (only extracted images - crops are added via UI)
+      // Enrich with paths and dimensions from DB (only extracted images - crops are added via UI)
       const extractedImages = getExtractedImages(label, pageId);
-      const pathMap = new Map(extractedImages.map((img) => [img.image_id, img.path]));
+      const imgMap = new Map(extractedImages.map((img) => [img.image_id, img]));
 
       const dbData = {
-        images: data.images.map((img) => ({
-          image_id: img.imageId,
-          path: pathMap.get(img.imageId) ?? `images/${img.imageId}.png`,
-          is_pruned: img.isPruned,
-        })),
+        images: data.images.map((img) => {
+          const dbImg = imgMap.get(img.imageId);
+          return {
+            image_id: img.imageId,
+            path: dbImg?.path ?? `images/${img.imageId}.png`,
+            width: dbImg?.width ?? 0,
+            height: dbImg?.height ?? 0,
+            is_pruned: img.isPruned,
+          };
+        }),
       };
 
       return putVersionedNodeData(label, "image-classification", pageId, dbData);
