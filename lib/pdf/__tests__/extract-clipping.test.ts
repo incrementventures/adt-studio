@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import sharp from "sharp";
+import { getPngMetadata, decodePng } from "../../images/png-utils";
 import { extractPdf, _testing } from "../extract";
 import { createTestPdf, createSmallGroupTestPdf } from "./create-test-pdf";
 
@@ -199,7 +199,7 @@ describe("Vector Image Extraction with Clipping", () => {
 
     // All images should be valid PNGs with transparency
     for (const img of page.images) {
-      const meta = await sharp(img.pngBuffer).metadata();
+      const meta = getPngMetadata(img.pngBuffer);
       expect(meta.channels).toBe(4); // RGBA
     }
   });
@@ -218,7 +218,7 @@ describe("Raster Image Extraction with Clipping", () => {
     expect(rasterImages.length).toBeGreaterThanOrEqual(1);
 
     // The clipped image should have an alpha channel
-    const meta = await sharp(rasterImages[0].pngBuffer).metadata();
+    const meta = getPngMetadata(rasterImages[0].pngBuffer);
     expect(meta.channels).toBe(4);
     expect(meta.hasAlpha).toBe(true);
   });
@@ -232,15 +232,13 @@ describe("Raster Image Extraction with Clipping", () => {
     const rasterImages = page.images.filter((img) => img.imageId.startsWith("pg003_im"));
     expect(rasterImages.length).toBeGreaterThanOrEqual(1);
 
-    const { data, info } = await sharp(rasterImages[0].pngBuffer)
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const decoded = decodePng(rasterImages[0].pngBuffer);
 
     let hasTransparent = false;
     let hasOpaque = false;
-    for (let i = 3; i < data.length; i += info.channels) {
-      if (data[i] === 0) hasTransparent = true;
-      if (data[i] === 255) hasOpaque = true;
+    for (let i = 3; i < decoded.data.length; i += 4) {
+      if (decoded.data[i] === 0) hasTransparent = true;
+      if (decoded.data[i] === 255) hasOpaque = true;
       if (hasTransparent && hasOpaque) break;
     }
     expect(hasTransparent).toBe(true);
