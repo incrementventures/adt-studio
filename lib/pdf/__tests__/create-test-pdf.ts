@@ -83,6 +83,30 @@ Q
   doc.insertPage(-1, doc.addPage([0, 0, 612, 792], 0, resources, buf));
 }
 
+/**
+ * Create a 1-page PDF with a tiny shape (10x10pt) and a normal shape (100x100pt)
+ * placed far apart so they form separate groups. Used to test small-group filtering.
+ */
+export function createSmallGroupTestPdf(): Buffer {
+  const doc = new mupdf.PDFDocument();
+  // Tiny 10x10 green rect at (50, 50) and normal 100x100 red rect at (300, 300)
+  const stream = `
+q
+0 0.5 0 rg
+50 50 10 10 re f
+Q
+q
+1 0 0 rg
+300 300 100 100 re f
+Q
+`;
+  const buf = new mupdf.Buffer();
+  buf.writeLine(stream);
+  const resources = doc.addObject(doc.newDictionary());
+  doc.insertPage(-1, doc.addPage([0, 0, 612, 792], 0, resources, buf));
+  return Buffer.from(doc.saveToBuffer("").asUint8Array());
+}
+
 function addRasterClipPage(doc: PDFDoc) {
   // Create a 20x20 test image: red left half, blue right half
   const imgW = 20;
