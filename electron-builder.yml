@@ -2,6 +2,8 @@ appId: com.incrementventures.adt-studio
 productName: ADT Studio
 copyright: Copyright (c) 2025 Increment Ventures
 
+asar: false
+
 directories:
   output: dist-electron
 

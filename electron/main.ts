@@ -371,22 +371,27 @@ app.whenReady().then(async () => {
     await showApiKeySetup();
   }
 
-  const port = await startNextServer();
-  createMainWindow(port);
+  try {
+    const port = await startNextServer();
+    createMainWindow(port);
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow(port);
-    }
-  });
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow(port);
+      }
+    });
+  } catch (err) {
+    const { dialog } = await import("electron");
+    dialog.showErrorBox(
+      "Failed to start server",
+      err instanceof Error ? err.stack ?? err.message : String(err),
+    );
+    app.quit();
+  }
 });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
-});
-
-app.on("before-quit", () => {
-  // Server runs in-process, no child process to clean up
 });
