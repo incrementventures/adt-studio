@@ -1,5 +1,11 @@
-import { app, BrowserWindow, Menu, ipcMain, safeStorage } from "electron";
-import { fork, type ChildProcess } from "node:child_process";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  safeStorage,
+  utilityProcess,
+} from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
@@ -13,7 +19,7 @@ const STANDALONE_DIR = path.join(APP_ROOT, ".next", "standalone");
 const STATIC_DIR = path.join(APP_ROOT, ".next", "static");
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
 
-let serverProcess: ChildProcess | null = null;
+let serverProcess: Electron.UtilityProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number;
 
@@ -210,10 +216,11 @@ async function startNextServer(): Promise<number> {
     fs.symlinkSync(PUBLIC_DIR, standalonePublicDir, "junction");
   }
 
-  serverProcess = fork(serverScript, [], {
+  serverProcess = utilityProcess.fork(serverScript, [], {
     cwd: STANDALONE_DIR,
     env,
     stdio: "pipe",
+    serviceName: "next-server",
   });
 
   serverProcess.stdout?.on("data", (data: Buffer) => {
