@@ -16,7 +16,7 @@
     "test:recache": "RECACHE=1 vitest run metadata-integration text-classification-integration",
     "test:coverage": "vitest run --coverage",
     "electron:build-ts": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
-    "electron:copy-assets": "cp config.yaml .next/standalone/ && cp -r prompts .next/standalone/ && cp -r public .next/standalone/ && mkdir -p .next/standalone/node_modules/@resvg/resvg-wasm && cp node_modules/@resvg/resvg-wasm/index_bg.wasm .next/standalone/node_modules/@resvg/resvg-wasm/ && mkdir -p .next/standalone/node_modules/mupdf/dist && cp node_modules/mupdf/dist/mupdf-wasm.wasm .next/standalone/node_modules/mupdf/dist/",
+    "electron:copy-assets": "node scripts/copy-electron-assets.mjs",
     "electron:dev": "pnpm build && pnpm electron:copy-assets && pnpm electron:build-ts && electron .",
     "electron:dist": "pnpm build && pnpm electron:build-ts && electron-builder --config electron-builder.yml",
     "electron:dist-mac": "pnpm build && pnpm electron:build-ts && electron-builder --config electron-builder.yml --mac",
