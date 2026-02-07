@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "electron-dist/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +14,13 @@
     "test:watch": "vitest",
     "test:integration": "vitest run metadata-integration text-classification-integration",
     "test:recache": "RECACHE=1 vitest run metadata-integration text-classification-integration",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "electron:build-ts": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
+    "electron:copy-assets": "cp config.yaml .next/standalone/ && cp -r prompts .next/standalone/ && cp -r public .next/standalone/ && mkdir -p .next/standalone/node_modules/@resvg/resvg-wasm && cp node_modules/@resvg/resvg-wasm/index_bg.wasm .next/standalone/node_modules/@resvg/resvg-wasm/ && mkdir -p .next/standalone/node_modules/mupdf/dist && cp node_modules/mupdf/dist/mupdf-wasm.wasm .next/standalone/node_modules/mupdf/dist/",
+    "electron:dev": "pnpm build && pnpm electron:copy-assets && pnpm electron:build-ts && electron .",
+    "electron:dist": "pnpm build && pnpm electron:build-ts && electron-builder --config electron-builder.yml",
+    "electron:dist-mac": "pnpm build && pnpm electron:build-ts && electron-builder --config electron-builder.yml --mac",
+    "electron:dist-win": "pnpm build && pnpm electron:build-ts && electron-builder --config electron-builder.yml --win"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.33",
@@ -38,6 +45,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
+    "@types/sql.js": "^1.4.9",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -47,11 +55,14 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "electron": "^34.0.0",
+    "electron-builder": "^26.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "electron"
     ]
   }
 }
