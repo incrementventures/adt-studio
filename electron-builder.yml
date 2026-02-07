@@ -1,0 +1,56 @@
+appId: com.incrementventures.adt-studio
+productName: ADT Studio
+copyright: Copyright (c) 2025 Increment Ventures
+
+directories:
+  output: dist-electron
+
+files:
+  - electron-dist/**/*
+  - electron/api-key-setup.html
+  - .next/standalone/**/*
+  - .next/static/**/*
+  - public/**/*
+  - config.yaml
+  - prompts/**/*
+  - "!node_modules"
+  - "!app"
+  - "!lib"
+  - "!scripts"
+  - "!fixtures"
+  - "!assets"
+  - "!.github"
+  - "!.context"
+  - "!books"
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

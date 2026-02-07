@@ -1,0 +1,95 @@
+name: Build Electron App
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build Next.js
+        run: pnpm build
+
+      - name: Copy runtime assets to standalone
+        run: pnpm electron:copy-assets
+
+      - name: Build Electron TypeScript
+        run: pnpm electron:build-ts
+
+      - name: Build Electron App (macOS)
+        run: pnpm exec electron-builder --config electron-builder.yml --mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: adt-studio-mac
+          path: dist-electron/*.dmg
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist-electron/*.dmg --clobber
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build Next.js
+        run: pnpm build
+
+      - name: Copy runtime assets to standalone
+        shell: bash
+        run: pnpm electron:copy-assets
+
+      - name: Build Electron TypeScript
+        run: pnpm electron:build-ts
+
+      - name: Build Electron App (Windows)
+        run: pnpm exec electron-builder --config electron-builder.yml --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: adt-studio-win
+          path: dist-electron/*.exe
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist-electron/*.exe --clobber
