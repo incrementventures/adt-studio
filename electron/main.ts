@@ -1,11 +1,5 @@
-import {
-  app,
-  BrowserWindow,
-  Menu,
-  ipcMain,
-  safeStorage,
-  utilityProcess,
-} from "electron";
+import { app, BrowserWindow, Menu, ipcMain, safeStorage } from "electron";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
@@ -19,7 +13,7 @@ const STANDALONE_DIR = path.join(APP_ROOT, ".next", "standalone");
 const STATIC_DIR = path.join(APP_ROOT, ".next", "static");
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
 
-let serverProcess: Electron.UtilityProcess | null = null;
+let serverProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number;
 
@@ -216,11 +210,12 @@ async function startNextServer(): Promise<number> {
     fs.symlinkSync(PUBLIC_DIR, standalonePublicDir, "junction");
   }
 
-  serverProcess = utilityProcess.fork(serverScript, [], {
+  // Use ELECTRON_RUN_AS_NODE so the Electron binary acts as plain Node.js.
+  // This avoids needing the Helper app binary (which isn't available in unsigned builds).
+  serverProcess = spawn(process.execPath, [serverScript], {
     cwd: STANDALONE_DIR,
-    env,
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
     stdio: "pipe",
-    serviceName: "next-server",
   });
 
   serverProcess.stdout?.on("data", (data: Buffer) => {
