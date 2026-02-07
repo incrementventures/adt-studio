@@ -71,7 +71,6 @@ jobs:
         run: pnpm build
 
       - name: Copy runtime assets to standalone
-        shell: bash
         run: pnpm electron:copy-assets
 
       - name: Build Electron TypeScript
