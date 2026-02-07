@@ -30,10 +30,7 @@ mac:
         - x64
         - arm64
   category: public.app-category.developer-tools
-  hardenedRuntime: true
-  gatekeeperAssess: false
-  entitlements: electron/entitlements.mac.plist
-  entitlementsInherit: electron/entitlements.mac.plist
+  identity: null
 
 win:
   target:
