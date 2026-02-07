@@ -1,8 +1,8 @@
 import { app, BrowserWindow, Menu, ipcMain, safeStorage } from "electron";
-import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
+import { pathToFileURL } from "node:url";
 
 const IS_PACKAGED = app.isPackaged;
 const APP_ROOT = IS_PACKAGED
@@ -13,7 +13,6 @@ const STANDALONE_DIR = path.join(APP_ROOT, ".next", "standalone");
 const STATIC_DIR = path.join(APP_ROOT, ".next", "static");
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
 
-let serverProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number;
 
@@ -180,18 +179,16 @@ async function startNextServer(): Promise<number> {
     fs.mkdirSync(booksRoot, { recursive: true });
   }
 
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PORT: String(port),
-    HOSTNAME: "127.0.0.1",
-    BOOKS_ROOT: booksRoot,
-    NODE_ENV: "production",
-  };
+  // Set env vars on the current process (the server runs in-process)
+  process.env.PORT = String(port);
+  process.env.HOSTNAME = "127.0.0.1";
+  process.env.BOOKS_ROOT = booksRoot;
+  process.env.NODE_ENV = "production";
 
   for (const keyName of KEY_NAMES) {
     const value = loadKey(keyName);
     if (value) {
-      env[keyName] = value;
+      process.env[keyName] = value;
     }
   }
 
@@ -210,25 +207,11 @@ async function startNextServer(): Promise<number> {
     fs.symlinkSync(PUBLIC_DIR, standalonePublicDir, "junction");
   }
 
-  // Use ELECTRON_RUN_AS_NODE so the Electron binary acts as plain Node.js.
-  // This avoids needing the Helper app binary (which isn't available in unsigned builds).
-  serverProcess = spawn(process.execPath, [serverScript], {
-    cwd: STANDALONE_DIR,
-    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: "pipe",
-  });
-
-  serverProcess.stdout?.on("data", (data: Buffer) => {
-    console.log(`[next] ${data.toString().trim()}`);
-  });
-  serverProcess.stderr?.on("data", (data: Buffer) => {
-    console.error(`[next] ${data.toString().trim()}`);
-  });
-
-  serverProcess.on("exit", (code) => {
-    console.log(`Next.js server exited with code ${code}`);
-    serverProcess = null;
-  });
+  // Run the Next.js server in-process. This avoids all child process spawning
+  // issues (Helper binary, code signing, ELECTRON_RUN_AS_NODE) in packaged apps.
+  // The standalone server.js is just an HTTP server that shares the event loop.
+  process.chdir(STANDALONE_DIR);
+  await import(pathToFileURL(serverScript).href);
 
   await waitForServer(port);
   return port;
@@ -289,18 +272,22 @@ function createMainWindow(port: number): void {
 
 // ── Restart server (picks up new keys) ──────────────────────────────────
 
-async function restartServer(): Promise<void> {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
-  // Reload keys from disk (user may have changed them)
+async function applyKeyChanges(): Promise<void> {
+  // Reload keys from disk and update process.env so the in-process server
+  // picks up changes on the next request (AI SDK clients read env per-request).
   keyCacheLoaded = false;
   keyCache.clear();
-  const port = await startNextServer();
-  serverPort = port;
+  loadAllKeys();
+  for (const keyName of KEY_NAMES) {
+    const value = keyCache.get(keyName);
+    if (value) {
+      process.env[keyName] = value;
+    } else {
+      delete process.env[keyName];
+    }
+  }
   if (mainWindow) {
-    mainWindow.loadURL(`http://127.0.0.1:${port}`);
+    mainWindow.reload();
   }
 }
 
@@ -319,7 +306,7 @@ function buildMenu(): void {
                 label: "API Keys…",
                 click: async () => {
                   await showApiKeySetup();
-                  await restartServer();
+                  await applyKeyChanges();
                 },
               },
               { type: "separator" as const },
@@ -337,7 +324,7 @@ function buildMenu(): void {
                 label: "API Keys…",
                 click: async () => {
                   await showApiKeySetup();
-                  await restartServer();
+                  await applyKeyChanges();
                 },
               },
               { type: "separator" as const },
@@ -401,8 +388,5 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
+  // Server runs in-process, no child process to clean up
 });
