@@ -40,4 +40,28 @@ copyRecursive(
   path.join(STANDALONE, "node_modules", "mupdf", "dist", "mupdf-wasm.wasm"),
 );
 
+// Dereference all symlinks in standalone node_modules.
+// pnpm uses a symlink farm; electron-builder can't resolve these in the packaged app.
+function derefSymlinks(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      const realPath = fs.realpathSync(fullPath);
+      fs.unlinkSync(fullPath);
+      const stat = fs.statSync(realPath);
+      if (stat.isDirectory()) {
+        copyRecursive(realPath, fullPath);
+      } else {
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.copyFileSync(realPath, fullPath);
+      }
+    } else if (entry.isDirectory()) {
+      derefSymlinks(fullPath);
+    }
+  }
+}
+
+derefSymlinks(path.join(STANDALONE, "node_modules"));
+
 console.log("Copied runtime assets to .next/standalone/");
